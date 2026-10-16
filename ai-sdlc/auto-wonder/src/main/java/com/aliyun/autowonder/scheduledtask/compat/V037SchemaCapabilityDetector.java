@@ -465,8 +465,20 @@ public final class V037SchemaCapabilityDetector {
         return value.toLowerCase(Locale.ROOT);
     }
 
+    /**
+     * 把 information_schema 的列类型规范成契约比较用的字符串.
+     * MySQL 8.0.19 之前会给整数类型带上默认显示宽度，例如 bigint(20) unsigned；去掉这段宽度后再比较.
+     *
+     * @param value 数据库返回的 COLUMN_TYPE，可以为空
+     * @return 小写、压缩空白并去掉整数显示宽度后的类型；入参为空时返回空字符串
+     */
     private static String normalizeType(String value) {
-        return value == null ? "" : value.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
+        if (value == null) {
+            return "";
+        }
+        String normalized = value.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
+        return normalized.replaceAll(
+                "\\b(bigint|mediumint|smallint|tinyint|int)\\(\\d+\\)", "$1");
     }
 
     private record ColumnKey(String table, String column) {

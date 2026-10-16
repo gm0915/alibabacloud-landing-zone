@@ -164,7 +164,7 @@ class AiWorkerPoolTest {
 
         workerPool.executeSession(session, null);
 
-        verify(cliExecutor).execute(eq("prompt"), any(), eq("/tmp/aiw/6"),
+        verify(cliExecutor).execute(eq("prompt"), any(), eq(nativePath("/tmp/aiw/6")),
                 eq(""), startsWith("sys"), any());
     }
 
@@ -180,7 +180,7 @@ class AiWorkerPoolTest {
 
         AgentConfigGenAdapter adapter = new AgentConfigGenAdapter();
         when(sceneRegistry.get(AiConstants.Scene.AGENT_CONFIG_GEN)).thenReturn(adapter);
-        when(cliExecutor.execute(anyString(), any(), eq("/tmp/aiw/80"), eq(""),
+        when(cliExecutor.execute(anyString(), any(), eq(nativePath("/tmp/aiw/80")), eq(""),
                 contains("数字员工配置草稿生成器"), any()))
                 .thenAnswer(invocation -> {
                     String prompt = invocation.getArgument(0);
@@ -209,6 +209,11 @@ class AiWorkerPoolTest {
         assertTrue(draft.getString("responsibilities").contains(responsibilityKeyword));
         assertTrue(draft.getString("responsibilities").contains(outputKeyword));
         verify(streamPublisher).publishResult(eq(80L), eq(100L), eq(resultCaptor.getValue()));
+    }
+
+    /** 生产代码把 Path.toString() 交给 CLI；Windows 会把 /tmp 渲染成 \tmp。 */
+    private static String nativePath(String path) {
+        return Path.of(path).toString();
     }
 
     private static String generatedAgentDraft(String prompt) {
@@ -301,7 +306,8 @@ class AiWorkerPoolTest {
         SceneAdapter adapter = mock(SceneAdapter.class);
         when(sceneRegistry.get(AiConstants.Scene.REPO_SCAN)).thenReturn(adapter);
         when(adapter.buildSystemPrompt(session)).thenReturn("repo sys");
-        when(adapter.buildUserPrompt(eq(session), eq("/tmp/aiw/3/repo"))).thenReturn("scan /tmp/aiw/3/repo");
+        String repoPath = nativePath("/tmp/aiw/3/repo");
+        when(adapter.buildUserPrompt(eq(session), eq(repoPath))).thenReturn("scan " + repoPath);
         when(repoWorkspacePreparer.prepare(eq(session), any())).thenReturn(Path.of("/tmp/aiw/3/repo"));
 
         CliResult cliResult = new CliResult();
@@ -316,7 +322,7 @@ class AiWorkerPoolTest {
         workerPool.executeSession(session, null);
 
         verify(repoWorkspacePreparer).prepare(eq(session), any());
-        verify(cliExecutor).execute(eq("scan /tmp/aiw/3/repo"), any(), eq("/tmp/aiw/3/repo"),
+        verify(cliExecutor).execute(eq("scan " + repoPath), any(), eq(repoPath),
                 any(), startsWith("repo sys"), any());
     }
 
@@ -349,7 +355,7 @@ class AiWorkerPoolTest {
         workerPool.executeSession(session, "请帮我澄清这个需求");
 
         verify(repoWorkspacePreparer).prepareMultiRepo(eq(100L), any());
-        verify(cliExecutor).execute(eq("请帮我澄清这个需求"), any(), eq("/tmp/aiw/7/repos"),
+        verify(cliExecutor).execute(eq("请帮我澄清这个需求"), any(), eq(nativePath("/tmp/aiw/7/repos")),
                 any(), startsWith("clarification sys"), any());
     }
 

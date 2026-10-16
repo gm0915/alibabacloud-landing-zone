@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -82,6 +83,23 @@ class V037SchemaCapabilityDetectorTest {
         assertEquals(V037MapperMode.SOURCE_AWARE, capability.mapperMode());
         assertTrue(capability.scheduledAvailable());
         assertTrue(capability.missingObjects().isEmpty());
+    }
+
+    /**
+     * MySQL 8.0.19 之前返回的整数默认显示宽度仍应判为完整 V037 schema.
+     */
+    @Test
+    void mysql8017IntegerDisplayWidthsStillClassifyAsReady() throws Exception {
+        List<ColumnRow> columns = readyColumns().stream()
+                .map(row -> column(row.table, row.column, withLegacyIntegerDisplayWidth(row.type),
+                        row.nullable, row.defaultValue, row.extra, row.expression))
+                .toList();
+
+        V037SchemaCapability capability = detector().detect(dataSource(columns, readyIndexes(), false));
+
+        assertThat(capability.mode()).isEqualTo(V037SchemaMode.V037_READY);
+        assertThat(capability.scheduledAvailable()).isTrue();
+        assertThat(capability.missingObjects()).isEmpty();
     }
 
     @Test
@@ -579,6 +597,25 @@ class V037SchemaCapabilityDetectorTest {
 
     private Map.Entry<String, ColumnSpec> n(String name, String type) {
         return Map.entry(name, new ColumnSpec(type, true, null));
+    }
+
+    /**
+     * 把契约中的整数类型写成 MySQL 8.0.17 的默认显示宽度.
+     *
+     * @param type 契约中的列类型
+     * @return 带默认显示宽度的类型；非整数类型保持原样
+     */
+    private String withLegacyIntegerDisplayWidth(String type) {
+        if ("bigint unsigned".equals(type)) {
+            return "bigint(20) unsigned";
+        }
+        if ("tinyint".equals(type)) {
+            return "tinyint(4)";
+        }
+        if ("int".equals(type)) {
+            return "int(11)";
+        }
+        return type;
     }
 
     private ColumnRow column(String table, String column, String type, boolean nullable,

@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -55,7 +56,7 @@ class V037DockerReleaseGateScriptContractTest {
 
     @Test
     void missingReleaseOptInFailsBeforeMavenCanRun() throws Exception {
-        ProcessBuilder builder = new ProcessBuilder(SCRIPT.toAbsolutePath().toString());
+        ProcessBuilder builder = releaseGateProcess();
         builder.environment().remove("AUTOWONDER_DOCKER_RELEASE_GATE");
         builder.redirectErrorStream(true);
         Process process = builder.start();
@@ -64,5 +65,21 @@ class V037DockerReleaseGateScriptContractTest {
 
         assertNotEquals(0, exitCode);
         assertTrue(output.contains("requires AUTOWONDER_DOCKER_RELEASE_GATE=true"), output);
+    }
+
+    /** Windows 不能直接 CreateProcess 启动 .sh，改由 Git Bash 执行同一脚本。 */
+    private static ProcessBuilder releaseGateProcess() {
+        String script = SCRIPT.toAbsolutePath().toString();
+        if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win")) {
+            return new ProcessBuilder(script);
+        }
+        String programFiles = System.getenv("ProgramFiles");
+        if (programFiles != null) {
+            Path gitBash = Path.of(programFiles, "Git", "bin", "bash.exe");
+            if (Files.isRegularFile(gitBash)) {
+                return new ProcessBuilder(gitBash.toString(), script);
+            }
+        }
+        return new ProcessBuilder("bash", script);
     }
 }

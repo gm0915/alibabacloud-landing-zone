@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -15,9 +16,11 @@ class EchoHelloSmokeTest {
 
     @Test
     void shouldEchoHelloFromShell() throws Exception {
-        Process process = new ProcessBuilder("echo", "hello")
-                .redirectErrorStream(true)
-                .start();
+        boolean windows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+        ProcessBuilder builder = windows
+                ? new ProcessBuilder("cmd.exe", "/c", "echo hello")
+                : new ProcessBuilder("echo", "hello");
+        Process process = builder.redirectErrorStream(true).start();
         String output;
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {

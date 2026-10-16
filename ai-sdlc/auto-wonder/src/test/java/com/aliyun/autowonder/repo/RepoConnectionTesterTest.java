@@ -4,10 +4,12 @@ import com.aliyun.autowonder.repo.dto.TestRepoConnectionRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -65,14 +67,17 @@ class RepoConnectionTesterTest {
 
     @Test
     void testReadsProcessStreamsWithProjectThreadPool() throws Exception {
-        Path fakeGit = tempDir.resolve("fake-git.sh");
-        Files.writeString(fakeGit, """
+        Path fakeGit = writeExecutable("fake-git", """
                 #!/bin/sh
                 echo refs/heads/main
                 echo diagnostic >&2
                 exit 0
-                """, StandardCharsets.UTF_8);
-        assertTrue(fakeGit.toFile().setExecutable(true, true));
+                """, """
+                @echo off
+                echo refs/heads/main
+                echo diagnostic 1>&2
+                exit /b 0
+                """);
         RepoConnectionTester tester = new RepoConnectionTester(fakeGit.toString(), 10);
         TestRepoConnectionRequest req = new TestRepoConnectionRequest();
         req.setUrl("https://github.com/workspace/repo.git");
@@ -85,13 +90,15 @@ class RepoConnectionTesterTest {
 
     @Test
     void testDisablesGitInteractivePromptSoLocalPermissionFailureDoesNotHang() throws Exception {
-        Path fakeGit = tempDir.resolve("echo-prompt-git.sh");
-        Files.writeString(fakeGit, """
+        Path fakeGit = writeExecutable("echo-prompt-git", """
                 #!/bin/sh
                 echo "prompt=$GIT_TERMINAL_PROMPT" >&2
                 exit 128
-                """, StandardCharsets.UTF_8);
-        assertTrue(fakeGit.toFile().setExecutable(true, true));
+                """, """
+                @echo off
+                echo prompt=%GIT_TERMINAL_PROMPT% 1>&2
+                exit /b 128
+                """);
         RepoConnectionTester tester = new RepoConnectionTester(fakeGit.toString(), 10);
         TestRepoConnectionRequest req = new TestRepoConnectionRequest();
         req.setUrl("https://github.com/workspace/private.git");
@@ -104,12 +111,13 @@ class RepoConnectionTesterTest {
 
     @Test
     void failureMessagePointsAtLocalGitPermissionInsteadOfCredentialInput() throws Exception {
-        Path fakeGit = tempDir.resolve("silent-fail-git.sh");
-        Files.writeString(fakeGit, """
+        Path fakeGit = writeExecutable("silent-fail-git", """
                 #!/bin/sh
                 exit 128
-                """, StandardCharsets.UTF_8);
-        assertTrue(fakeGit.toFile().setExecutable(true, true));
+                """, """
+                @echo off
+                exit /b 128
+                """);
         RepoConnectionTester tester = new RepoConnectionTester(fakeGit.toString(), 10);
         TestRepoConnectionRequest req = new TestRepoConnectionRequest();
         req.setUrl("https://github.com/workspace/private.git");
@@ -118,5 +126,15 @@ class RepoConnectionTesterTest {
 
         assertFalse(result.isSuccess());
         assertEquals("连接测试失败，请检查仓库地址、网络和本机 git 权限", result.getMessage());
+    }
+
+    private Path writeExecutable(String baseName, String shellScript, String windowsCommand) throws IOException {
+        boolean windows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+        Path script = tempDir.resolve(baseName + (windows ? ".cmd" : ".sh"));
+        Files.writeString(script, windows ? windowsCommand : shellScript, StandardCharsets.UTF_8);
+        if (!windows) {
+            assertTrue(script.toFile().setExecutable(true, true));
+        }
+        return script;
     }
 }

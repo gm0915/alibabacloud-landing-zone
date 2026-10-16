@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
@@ -28,7 +29,7 @@ class RepoWorkspacePreparerTest {
 
         assertEquals(List.of("git", "clone", "--depth", "1", "--branch", "master",
                 "--single-branch", "git@gitlab.alibaba-inc.com:sdlc-autopilot/auto-wonder.git",
-                "/tmp/aiw/10003/repo"), command);
+                Path.of("/tmp/aiw/10003/repo").toString()), command);
     }
 
     @Test
@@ -59,8 +60,7 @@ class RepoWorkspacePreparerTest {
 
     @Test
     void prepareMultiRepoReadsCloneProcessStreamsWithProjectThreadPool(@TempDir Path tempDir) throws Exception {
-        Path fakeGit = tempDir.resolve("fake-git.sh");
-        Files.writeString(fakeGit, """
+        Path fakeGit = writeExecutable(tempDir, "fake-git", """
                 #!/bin/sh
                 target=""
                 for arg in "$@"; do
@@ -70,8 +70,21 @@ class RepoWorkspacePreparerTest {
                 echo clone-output
                 echo clone-diagnostic >&2
                 exit 0
-                """, StandardCharsets.UTF_8);
-        assertTrue(fakeGit.toFile().setExecutable(true, true));
+                """, """
+                @echo off
+                setlocal EnableExtensions
+                set "target="
+                :loop
+                if "%~1"=="" goto done
+                set "target=%~1"
+                shift
+                goto loop
+                :done
+                if not exist "%target%" mkdir "%target%"
+                echo clone-output
+                echo clone-diagnostic 1>&2
+                exit /b 0
+                """);
         RepoDao repoDao = mock(RepoDao.class);
         RepoDO repo = new RepoDO();
         repo.setId(7L);
@@ -88,9 +101,9 @@ class RepoWorkspacePreparerTest {
 
     @Test
     void cloneUsesLocalGitPermissionWithoutWritingCredentialFiles(@TempDir Path tempDir) throws Exception {
-        Path fakeGit = tempDir.resolve("env-probe-git.sh");
         Path envDump = tempDir.resolve("env-dump.txt");
-        Files.writeString(fakeGit, """
+        String envFile = envDump.toString().replace("\"", "");
+        Path fakeGit = writeExecutable(tempDir, "env-probe-git", """
                 #!/bin/sh
                 target=""
                 for arg in "$@"; do
@@ -104,8 +117,23 @@ class RepoWorkspacePreparerTest {
                   echo "GIT_TERMINAL_PROMPT=$GIT_TERMINAL_PROMPT"
                 } > "%s"
                 exit 0
-                """.formatted(envDump), StandardCharsets.UTF_8);
-        assertTrue(fakeGit.toFile().setExecutable(true, true));
+                """.formatted(envDump), """
+                @echo off
+                setlocal EnableExtensions
+                set "target="
+                :loop
+                if "%%~1"=="" goto write
+                set "target=%%~1"
+                shift
+                goto loop
+                :write
+                if not exist "%%target%%" mkdir "%%target%%"
+                > "%s" echo GIT_SSH_COMMAND=%%GIT_SSH_COMMAND%%
+                >> "%s" echo GIT_ASKPASS=%%GIT_ASKPASS%%
+                >> "%s" echo AUTOWONDER_REPO_TOKEN=%%AUTOWONDER_REPO_TOKEN%%
+                >> "%s" echo GIT_TERMINAL_PROMPT=%%GIT_TERMINAL_PROMPT%%
+                exit /b 0
+                """.formatted(envFile, envFile, envFile, envFile));
         RepoDao repoDao = mock(RepoDao.class);
         RepoDO repo = new RepoDO();
         repo.setId(7L);
@@ -116,12 +144,23 @@ class RepoWorkspacePreparerTest {
 
         Path result = preparer.prepareMultiRepo(100L, tempDir.resolve("work"));
 
-        String env = Files.readString(envDump);
+        String env = Files.readString(envDump).replace("\r\n", "\n");
         assertTrue(env.contains("GIT_SSH_COMMAND=\n"), env);
         assertTrue(env.contains("GIT_ASKPASS=\n"), env);
         assertTrue(env.contains("AUTOWONDER_REPO_TOKEN=\n"), env);
         assertTrue(env.contains("GIT_TERMINAL_PROMPT=0"), env);
         assertFalse(Files.exists(result.resolve("repo_key")));
         assertFalse(Files.exists(result.resolve("git-askpass.sh")));
+    }
+
+    private static Path writeExecutable(Path dir, String baseName, String shellScript, String windowsCommand)
+            throws IOException {
+        boolean windows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+        Path script = dir.resolve(baseName + (windows ? ".cmd" : ".sh"));
+        Files.writeString(script, (windows ? windowsCommand : shellScript).stripIndent(), StandardCharsets.UTF_8);
+        if (!windows) {
+            assertTrue(script.toFile().setExecutable(true, true));
+        }
+        return script;
     }
 }
