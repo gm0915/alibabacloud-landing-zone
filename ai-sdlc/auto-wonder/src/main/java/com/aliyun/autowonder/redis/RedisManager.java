@@ -8,6 +8,7 @@ import redis.clients.jedis.*;
 import redis.clients.jedis.exceptions.JedisDataException;
 import redis.clients.jedis.params.XAddParams;
 import redis.clients.jedis.params.XAutoClaimParams;
+import redis.clients.jedis.params.XClaimParams;
 import redis.clients.jedis.params.XPendingParams;
 import redis.clients.jedis.params.XReadGroupParams;
 import redis.clients.jedis.params.SetParams;
@@ -23,8 +24,16 @@ public class RedisManager extends AbstractRedisManager {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RedisManager.class);
 
+    /**
+     * 没有 XAUTOCLAIM 时，单次恢复最多翻过的待确认页数.
+     */
+    // shortcut: 8 pages of count, raise when idle entries sit past that pending window
+    private static final int XAUTO_CLAIM_FALLBACK_MAX_PAGES = 8;
+
     @Getter
     private JedisPool jedisPool;
+
+    private volatile boolean xautoClaimUnsupported;
 
 
     public RedisManager(JedisPool jedisPool, boolean testEnterprise) {
@@ -418,18 +427,102 @@ public class RedisManager extends AbstractRedisManager {
         }
     }
 
+    /**
+     * 领取空闲超过指定时间的未确认消息.
+     * Redis 6.2 起用 XAUTOCLAIM；更低版本没有该命令时改用 XPENDING 与 XCLAIM，并在本进程内记住。
+     *
+     * @param stream 流键
+     * @param group 消费组
+     * @param consumer 接手的消费者
+     * @param minIdleMillis 最小空闲毫秒
+     * @param count 最多领取条数
+     * @return 领取到的消息；没有时返回空列表
+     */
     public List<StreamEntry> xautoClaim(String stream, String group, String consumer,
                                         long minIdleMillis, int count) {
         try (Jedis jedis = jedisPool.getResource()) {
-            Map.Entry<StreamEntryID, List<StreamEntry>> result = jedis.xautoclaim(
-                    stream,
-                    group,
-                    consumer,
-                    minIdleMillis,
-                    new StreamEntryID("0-0"),
-                    XAutoClaimParams.xAutoClaimParams().count(count));
-            return result == null || result.getValue() == null ? List.of() : result.getValue();
+            if (xautoClaimUnsupported) {
+                return claimIdlePending(jedis, stream, group, consumer, minIdleMillis, count);
+            }
+            try {
+                Map.Entry<StreamEntryID, List<StreamEntry>> result = jedis.xautoclaim(
+                        stream,
+                        group,
+                        consumer,
+                        minIdleMillis,
+                        new StreamEntryID("0-0"),
+                        XAutoClaimParams.xAutoClaimParams().count(count));
+                return result == null || result.getValue() == null ? List.of() : result.getValue();
+            } catch (JedisDataException e) {
+                if (!isUnknownXAutoClaim(e)) {
+                    throw e;
+                }
+                xautoClaimUnsupported = true;
+                LOGGER.warn("Redis does not support XAUTOCLAIM; recovering idle stream entries with XPENDING and XCLAIM");
+                return claimIdlePending(jedis, stream, group, consumer, minIdleMillis, count);
+            }
         }
+    }
+
+    /**
+     * 按待确认列表里的空闲时间领取消息，供没有 XAUTOCLAIM 的 Redis 使用.
+     *
+     * @param jedis 当前连接
+     * @param stream 流键
+     * @param group 消费组
+     * @param consumer 接手的消费者
+     * @param minIdleMillis 最小空闲毫秒
+     * @param count 最多领取条数
+     * @return 领取到的消息；没有时返回空列表
+     */
+    private static List<StreamEntry> claimIdlePending(Jedis jedis, String stream, String group, String consumer,
+                                                      long minIdleMillis, int count) {
+        if (count <= 0) {
+            return List.of();
+        }
+        StreamEntryID start = new StreamEntryID("0-0");
+        StreamEntryID end = new StreamEntryID(Long.MAX_VALUE, Long.MAX_VALUE);
+        List<StreamEntry> claimed = new ArrayList<>();
+        for (int page = 0; page < XAUTO_CLAIM_FALLBACK_MAX_PAGES && claimed.size() < count; page++) {
+            List<StreamPendingEntry> pending = jedis.xpending(stream, group, start, end, count, null);
+            if (pending == null || pending.isEmpty()) {
+                break;
+            }
+            List<StreamEntryID> idleIds = new ArrayList<>();
+            for (StreamPendingEntry entry : pending) {
+                if (page > 0 && start.equals(entry.getID())) {
+                    continue;
+                }
+                if (entry.getIdleTime() >= minIdleMillis) {
+                    idleIds.add(entry.getID());
+                    if (claimed.size() + idleIds.size() >= count) {
+                        break;
+                    }
+                }
+            }
+            if (!idleIds.isEmpty()) {
+                List<StreamEntry> pageClaimed = jedis.xclaim(stream, group, consumer, minIdleMillis,
+                        XClaimParams.xClaimParams(), idleIds.toArray(StreamEntryID[]::new));
+                if (pageClaimed != null) {
+                    claimed.addAll(pageClaimed);
+                }
+            }
+            StreamEntryID last = pending.get(pending.size() - 1).getID();
+            if (pending.size() < count || last.equals(start)) {
+                break;
+            }
+            start = last;
+        }
+        return claimed;
+    }
+
+    private static boolean isUnknownXAutoClaim(JedisDataException e) {
+        String message = e.getMessage();
+        if (message == null) {
+            return false;
+        }
+        String upper = message.toUpperCase(java.util.Locale.ROOT);
+        return upper.contains("UNKNOWN COMMAND") && upper.contains("XAUTOCLAIM");
     }
 
     public long xpendingDeliveryCount(String stream, String group, String messageId) {
