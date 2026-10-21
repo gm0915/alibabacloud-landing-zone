@@ -416,7 +416,7 @@ describe('WorkitemClarificationPanel', () => {
 
     expect(await screen.findByText('已选择的开发')).toBeInTheDocument();
     expect(screen.queryByText('数字员工')).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByPlaceholderText('输入消息...')).toHaveValue('请通过平台 MCP 读取工单 #100，与我进行需求澄清。'));
+    await waitFor(() => expect(screen.getByPlaceholderText('输入消息...')).toHaveValue('请通过平台 MCP 读取工单 #100，与我进行需求澄清，需求确认后启动交付。'));
   });
 
   it('prefills the bootstrap prompt for an automatically created first session', async () => {
@@ -441,7 +441,7 @@ describe('WorkitemClarificationPanel', () => {
     renderPanel([]);
 
     expect(await screen.findByDisplayValue(
-      '请通过平台 MCP 读取工单 #100，与我进行需求澄清。',
+      '请通过平台 MCP 读取工单 #100，与我进行需求澄清，需求确认后启动交付。',
     )).toBeInTheDocument();
   });
 
@@ -469,7 +469,7 @@ describe('WorkitemClarificationPanel', () => {
 
     renderPanel([]);
     const textarea = await screen.findByPlaceholderText('输入消息...');
-    await waitFor(() => expect(textarea).toHaveValue('请通过平台 MCP 读取工单 #100，与我进行需求澄清。'));
+    await waitFor(() => expect(textarea).toHaveValue('请通过平台 MCP 读取工单 #100，与我进行需求澄清，需求确认后启动交付。'));
 
     fireEvent.keyDown(textarea, { key: 'Enter', code: 'Enter', shiftKey: true });
     await waitFor(() => expect(textarea).toHaveValue(''));
@@ -485,7 +485,7 @@ describe('WorkitemClarificationPanel', () => {
       http.get('/api/workitems/:workitemId/clarification-conversations/:conversationId', () =>
         HttpResponse.json({ success: true, data: empty })),
     );
-    const prompt = '请通过平台 MCP 读取工单 #100，与我进行需求澄清。';
+    const prompt = '请通过平台 MCP 读取工单 #100，与我进行需求澄清，需求确认后启动交付。';
     const first = renderPanel([], { fullscreen: true, initialConversationId: 7 });
     const input = await screen.findByDisplayValue(prompt);
     await typeComposer('');
@@ -1286,7 +1286,7 @@ describe('WorkitemClarificationPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /新对话/ }));
 
     await waitFor(() => expect(screen.getByTestId('clarification-conversation-select')).toHaveTextContent('会话 #303'));
-    await waitFor(() => expect(textarea).toHaveValue('请通过平台 MCP 读取工单 #100，与我进行需求澄清。'));
+    await waitFor(() => expect(textarea).toHaveValue('请通过平台 MCP 读取工单 #100，与我进行需求澄清，需求确认后启动交付。'));
   });
 
   it('submits to the historical conversation after switching back to it', async () => {
@@ -1473,7 +1473,7 @@ describe('WorkitemClarificationPanel', () => {
     fireEvent.click(await screen.findByText(/会话 #101/));
 
     await screen.findByText('空历史会话数字员工');
-    await waitFor(() => expect(textarea).toHaveValue('请通过平台 MCP 读取工单 #100，与我进行需求澄清。'));
+    await waitFor(() => expect(textarea).toHaveValue('请通过平台 MCP 读取工单 #100，与我进行需求澄清，需求确认后启动交付。'));
   });
 
   it('does not restore a failed send draft into a different selected session', async () => {

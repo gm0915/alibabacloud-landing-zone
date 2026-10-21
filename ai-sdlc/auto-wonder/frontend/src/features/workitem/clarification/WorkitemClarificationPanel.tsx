@@ -92,7 +92,7 @@ export function isNearScrollBottom(
 }
 
 const clarificationBootstrapPrompt = (workitemId: string) =>
-  `请通过平台 MCP 读取工单 #${workitemId}，与我进行需求澄清。`;
+  `请通过平台 MCP 读取工单 #${workitemId}，与我进行需求澄清，需求确认后启动交付。`;
 
 /** 加载中/加载失败提示的居中样式：与 Empty 同视觉重量，不抢占消息流。 */
 const CLARIFICATION_LOAD_HINT_STYLE: CSSProperties = {
