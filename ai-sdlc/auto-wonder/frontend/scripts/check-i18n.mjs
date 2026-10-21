@@ -106,9 +106,12 @@ export function checkBaseline(literals, baseline) {
 function files(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? files(resolve(directory, entry.name)) : [resolve(directory, entry.name)]);
 }
+const posix = path => path.replace(/\\/g, '/');
 export function scanSource(root) {
-  return files(resolve(root, 'src')).filter(file => /\.tsx?$/.test(file) && !/\.(?:test|d)\.tsx?$/.test(file) && !file.includes('/src/test/'))
-    .flatMap(file => findUiLiterals(readFileSync(file, 'utf8'), relative(root, file)));
+  return files(resolve(root, 'src')).filter(file => {
+    const name = posix(file);
+    return /\.tsx?$/.test(name) && !/\.(?:test|d)\.tsx?$/.test(name) && !name.includes('/src/test/');
+  }).flatMap(file => findUiLiterals(readFileSync(file, 'utf8'), posix(relative(root, file))));
 }
 export function checkProject(root = resolve(dirname(fileURLToPath(import.meta.url)), '..')) {
   const errors = [];

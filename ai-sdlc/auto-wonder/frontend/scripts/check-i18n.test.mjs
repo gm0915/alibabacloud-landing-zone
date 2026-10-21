@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkResourcePair, findUiLiterals, checkBaseline } from './check-i18n.mjs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { checkResourcePair, findUiLiterals, checkBaseline, scanSource } from './check-i18n.mjs';
 test('resources reject missing keys, interpolation mismatch, and empty or nonstring values', () => {
   assert.equal(checkResourcePair({ save: '保存 {{name}}' }, { save: 'Save {{name}}' }).length, 0);
   for (const other of [{}, { save: 'Save {{other}}' }, { save: '' }, { save: 2 }]) {
@@ -13,6 +16,17 @@ test('parser finds English and Chinese JSX text, attributes, labels and messages
 });
 test('comments, imports, routes and technical constants do not count as UI', () => {
   assert.deepEqual(findUiLiterals(`// 中文注释\nimport x from 'thing'; const URL = '/api/users'; const state = 'LOADING'; const css = {color: 'red'};`, 'Page.tsx'), []);
+});
+test('scanned paths stay posix and skip src/test so they match the baseline', () => {
+  const root = mkdtempSync(join(tmpdir(), 'i18n-'));
+  mkdirSync(join(root, 'src', 'test'), { recursive: true });
+  writeFileSync(join(root, 'src', 'Page.tsx'), `const view = <button>Save</button>;`);
+  writeFileSync(join(root, 'src', 'test', 'Ignored.tsx'), `const view = <button>Ignore</button>;`);
+  try {
+    assert.deepEqual(scanSource(root).map(item => item.file), ['src/Page.tsx']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 test('baseline permits exact occurrences only and catches additions in old files', () => {
   const old = findUiLiterals(`const view = <button>Save</button>;`, 'Page.tsx');
