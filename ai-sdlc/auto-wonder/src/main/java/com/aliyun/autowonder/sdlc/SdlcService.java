@@ -430,9 +430,15 @@ public class SdlcService {
         return incoming.isBlank() ? null : incoming;
     }
 
-    // sdlc_step 的 checklist_json/gate_policy_json 是 MySQL JSON 列，
-    // 非法 JSON 写入会触发 DataIntegrityViolation 并被映射为误导性的 409「数据冲突」，
-    // 因此在写库前做语法校验并以参数错误（400）快速失败。
+    /**
+     * 校验步骤 JSON 后再写入.
+     * gatePolicyJson 里的 approvalTitle 缺省或 null 表示沿用步骤名；写出时必须是 1 至 128 字的文本.
+     * sdlc_step 的 checklist_json、gate_policy_json 是 MySQL JSON 列，非法 JSON 会变成误导性的数据冲突，因此在写库前拒绝.
+     *
+     * @param field 字段名，checklistJson 或 gatePolicyJson
+     * @param value 待写入的 JSON；空白表示清空，不再校验
+     * @throws BizException JSON 不合法，或准出策略中的确认、审批人、审批标题不符合约定
+     */
     private void requireValidJson(String field, String value) {
         if (value == null || value.isBlank()) {
             return;
@@ -443,6 +449,13 @@ public class SdlcService {
                     || node.has("humanApprovalRequired") && !node.get("humanApprovalRequired").isBoolean()
                     || node.has("askWhenUnclear") && !node.get("askWhenUnclear").isBoolean())) {
                 throw BizException.keyed(ErrorCode.PARAM_INVALID, "sdlc.human_gate_policy_invalid", null, "gatePolicyJson 必须是对象，humanApprovalRequired 和 askWhenUnclear 必须是布尔值");
+            }
+            if ("gatePolicyJson".equals(field) && node.has("approvalTitle") && !node.get("approvalTitle").isNull()) {
+                var title = node.get("approvalTitle");
+                final int approvalTitleMaxLength = 128;
+                if (!title.isTextual() || title.asText().isBlank() || title.asText().trim().length() > approvalTitleMaxLength) {
+                    throw BizException.keyed(ErrorCode.PARAM_INVALID, "sdlc.approval_title_invalid", null, "approvalTitle 必须为 1 至 128 字的文本");
+                }
             }
             if ("gatePolicyJson".equals(field) && node.has("humanApprovers")) {
                 var approvers = node.get("humanApprovers");

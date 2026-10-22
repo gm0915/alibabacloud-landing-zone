@@ -184,6 +184,8 @@
     "evidenceRequiredLabel": "evidenceRequired：",
     "requiredArtifactsLabel": "requiredArtifacts：",
     "checklistRequiredLabel": "checklistRequired：",
+    "approvalTitleLabel": "approvalTitle：",
+    "approvalTitle": "人工确认卡片和通知里代替步骤名的标题。不填则使用当前步骤名，最多 128 字。",
     "field": "查看{{field}}帮助"
   },
   "gallery": {

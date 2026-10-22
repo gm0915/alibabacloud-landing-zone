@@ -14,6 +14,7 @@ import org.springframework.dao.DuplicateKeyException;
 
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -1016,6 +1017,37 @@ class SdlcServiceTest {
             assertBilingual(ex, sample[1]);
         }
         verify(stepDao, never()).update(any(SdlcStepDO.class));
+    }
+
+    /**
+     * approvalTitle 为非文本、空白或超过 128 字时拒绝保存；合法标题随准出策略写入.
+     */
+    @Test
+    void updateStepRejectsAnInvalidApprovalTitleAndKeepsAValidOne() {
+        when(sdlcDao.findById(9L)).thenReturn(sdlc(9L, "DRAFT"));
+        SdlcStepDO step = new SdlcStepDO();
+        step.setId(1L);
+        step.setSdlcId(9L);
+        step.setStepOrder(1);
+        step.setName("汇报与交接");
+        when(stepDao.findById(1L)).thenReturn(step);
+        for (String sample : List.of(
+                "{\"approvalTitle\":1}",
+                "{\"approvalTitle\":\" \"}",
+                "{\"approvalTitle\":\"" + "测".repeat(129) + "\"}")) {
+            UpdateStepRequest req = new UpdateStepRequest();
+            req.setGatePolicyJson(sample);
+            BizException ex = assertThrows(BizException.class,
+                    () -> service.updateStep(9L, 1L, req, 100L, 7L));
+            assertThat(ex.getCode()).isEqualTo("10001");
+            assertBilingual(ex, "approvalTitle must contain between 1 and 128 characters.");
+        }
+        verify(stepDao, never()).update(any(SdlcStepDO.class));
+
+        UpdateStepRequest valid = new UpdateStepRequest();
+        valid.setGatePolicyJson("{\"humanApprovalRequired\":true,\"approvalTitle\":\"发布测试环境\"}");
+        service.updateStep(9L, 1L, valid, 100L, 7L);
+        verify(stepDao).update(argThat(saved -> saved.getGatePolicyJson().contains("\"approvalTitle\":\"发布测试环境\"")));
     }
 
     @Test

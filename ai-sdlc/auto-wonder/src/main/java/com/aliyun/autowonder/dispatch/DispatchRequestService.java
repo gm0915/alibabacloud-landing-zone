@@ -76,6 +76,16 @@ public class DispatchRequestService {
         this.v037Capability = v037Capability;
     }
 
+    /**
+     * 创建执行中的人工确认或问答，并通知接收人.
+     * 人工确认标题默认是当前步骤名；准出策略 approvalTitle 为非空文本时改用该文本.
+     * 问答标题仍是当前步骤名.
+     *
+     * @param dispatchId 当前执行 ID
+     * @param input 请求类型、标识、步骤、问题和表单
+     * @return 已创建的请求；相同标识且内容一致时返回已有请求
+     * @throws BizException 请求不合法、步骤不属于当前流程，或当前执行已结束
+     */
     public Request create(long dispatchId, Create input) {
         DispatchDO d = active(dispatchId);
         if (input == null || !Set.of("INPUT", "APPROVAL").contains(Objects.toString(input.kind(), ""))
@@ -110,7 +120,7 @@ public class DispatchRequestService {
         if (timeout < 1 || timeout > 30 * 60) invalid("dispatch_request.timeout_out_of_range", "等待超时超出允许范围");
         Timestamp expiresAt = "APPROVAL".equals(input.kind()) ? null
                 : new Timestamp(System.currentTimeMillis() + timeout * 1000L);
-        String stepName = step.getName();
+        String stepName = approvalTitle(input.kind(), policy, step.getName());
         return tx.execute(s -> {
             lockSubject(d);
             active(dispatchId);
@@ -148,6 +158,27 @@ public class DispatchRequestService {
                     : input.schema().getString("x-autowonder-message-kind"), recipients));
             return r;
         });
+    }
+
+    /**
+     * 解析人工确认标题.
+     * 准出策略 approvalTitle 为非空文本时使用该文本，否则使用当前步骤名.
+     * 问答不读取该字段.
+     *
+     * @param kind 请求类型
+     * @param policy 当前步骤准出策略；问答或未配置时可为 null
+     * @param stepName 当前步骤名
+     * @return 卡片和通知使用的标题
+     */
+    private static String approvalTitle(String kind, JSONObject policy, String stepName) {
+        if (!"APPROVAL".equals(kind) || policy == null) {
+            return stepName;
+        }
+        Object configuredTitle = policy.get("approvalTitle");
+        if (configuredTitle instanceof String title && !title.isBlank()) {
+            return title.trim();
+        }
+        return stepName;
     }
 
     public Request get(long workspaceId, long dispatchId, long id) {

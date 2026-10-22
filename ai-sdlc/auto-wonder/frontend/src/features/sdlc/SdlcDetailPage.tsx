@@ -725,6 +725,7 @@ function GatePolicyFieldHelp() {
       <div><b>{t('help.evidenceRequiredLabel')}</b>{t('help.evidenceRequired')}</div>
       <div><b>{t('help.requiredArtifactsLabel')}</b>{t('help.requiredArtifacts')}</div>
       <div><b>{t('help.checklistRequiredLabel')}</b>{t('help.checklistRequired')}</div>
+      <div><b>{t('help.approvalTitleLabel')}</b>{t('help.approvalTitle')}</div>
       <div>
         <b>{t('help.example')}</b>
         <pre style={{ margin: '4px 0 0', whiteSpace: 'pre-wrap' }}>{policyExample}</pre>

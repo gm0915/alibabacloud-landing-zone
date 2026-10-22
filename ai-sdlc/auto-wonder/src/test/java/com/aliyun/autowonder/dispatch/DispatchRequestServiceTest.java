@@ -29,6 +29,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -267,6 +268,27 @@ class DispatchRequestServiceTest {
         var error = assertThrows(BizException.class, () -> controller.reply(10,1,"Bearer " + capability,
                 new DispatchRequestService.Reply("approve",json("{}"))));
         assertLocalized(error, 401, "必须由登录用户亲自确认", "A signed-in user must confirm this request personally.");
+    }
+
+    /**
+     * 人工确认在准出策略写了 approvalTitle 时用该标题，未写或空白时仍用当前步骤名.
+     */
+    @Test
+    void approvalTitleReplacesTheStepNameWhenConfigured() {
+        step.setGatePolicyJson("{\"humanApprovalRequired\":true,\"approvalTitle\":\" 进入发布测试环境 \"}");
+        var titled = create("APPROVAL", "titled");
+        assertThat(titled.body().getString("stepName")).isEqualTo("进入发布测试环境");
+        var event = org.mockito.ArgumentCaptor.forClass(DispatchRequestService.HumanRequestCreated.class);
+        verify(events).publishEvent(event.capture());
+        assertThat(event.getValue().stepName()).isEqualTo("进入发布测试环境");
+
+        step.setGatePolicyJson("{\"humanApprovalRequired\":true,\"approvalTitle\":\"  \"}");
+        var blank = create("APPROVAL", "blank-title");
+        assertThat(blank.body().getString("stepName")).isEqualTo("编写验收摘要并等待批准");
+
+        step.setGatePolicyJson("{\"humanApprovalRequired\":true}");
+        var absent = create("APPROVAL", "absent-title");
+        assertThat(absent.body().getString("stepName")).isEqualTo(step.getName());
     }
 
     @Test void questionsAreOptInAndNotifyParticipantsOnlyOnceWithFullStepName() {

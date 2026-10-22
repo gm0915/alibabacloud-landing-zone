@@ -188,6 +188,8 @@
     "evidenceRequiredLabel": "evidenceRequired: ",
     "requiredArtifactsLabel": "requiredArtifacts: ",
     "checklistRequiredLabel": "checklistRequired: ",
+    "approvalTitleLabel": "approvalTitle: ",
+    "approvalTitle": "Title used instead of the step name on the approval card and notification. When omitted, the current step name is used. At most 128 characters.",
     "field": "Help for {{field}}"
   },
   "gallery": {
