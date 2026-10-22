@@ -19,6 +19,12 @@ import { filesFromClipboard, validateDocumentSelection } from '@/shared/lib/docu
 import './chiefOfStaff.css';
 
 interface Preference { conversationId: number | null; x: number; y: number; width: number; height: number; docked: boolean; }
+function clientMessageId(): string {
+  const webCrypto = globalThis.crypto;
+  if (typeof webCrypto?.randomUUID === 'function') return webCrypto.randomUUID();
+  return `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 const INBOUND = 'IN';
 const PENDING = 'PENDING';
 const EXPIRED = 'EXPIRED';
@@ -134,7 +140,7 @@ function Assistant({ userId, workspaceId }: { userId: number; workspaceId: numbe
       setPrefs(p => ({ ...p, conversationId: id }));
     }
     const content = draft.trim() ? draft : t('imageOnlyMessage');
-    if (!pendingMessage.current || pendingMessage.current.content !== content || JSON.stringify(pendingMessage.current.imageIds) !== JSON.stringify(images.map(image => image.id))) pendingMessage.current = { content, id: crypto.randomUUID(), path: context ? location.pathname : null, imageIds: images.map(image => image.id) };
+    if (!pendingMessage.current || pendingMessage.current.content !== content || JSON.stringify(pendingMessage.current.imageIds) !== JSON.stringify(images.map(image => image.id))) pendingMessage.current = { content, id: clientMessageId(), path: context ? location.pathname : null, imageIds: images.map(image => image.id) };
     followLatest.current = true;
     const pending = pendingMessage.current;
     if (pending.imageIds.length) await api.sendMessage(id, pending.content, pending.id, pending.path, pending.imageIds);

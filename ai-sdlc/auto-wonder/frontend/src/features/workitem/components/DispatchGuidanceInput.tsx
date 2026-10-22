@@ -4,6 +4,12 @@ import { useAccessCommand } from '@/shared/auth/useAccessCommand';
 import { useTranslation } from 'react-i18next';
 import { getDispatchGuidance, sendDispatchGuidance, type DispatchGuidance } from '../api';
 
+function requestKey(): string {
+  const webCrypto = globalThis.crypto;
+  if (typeof webCrypto?.randomUUID === 'function') return webCrypto.randomUUID();
+  return `g-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 export function DispatchGuidanceInput({ dispatchId }: { dispatchId: number }) {
   const { t } = useTranslation('workitem');
   const access = useAccessCommand();
@@ -30,7 +36,7 @@ export function DispatchGuidanceInput({ dispatchId }: { dispatchId: number }) {
   const send = async () => {
     if (sending || !content.trim()) return;
     const text = content;
-    if (request.current?.content !== text) request.current = { content: text, key: crypto.randomUUID() };
+    if (request.current?.content !== text) request.current = { content: text, key: requestKey() };
     setSending(true); setError(null);
     try {
       const rows = await sendDispatchGuidance(dispatchId, text, request.current.key);

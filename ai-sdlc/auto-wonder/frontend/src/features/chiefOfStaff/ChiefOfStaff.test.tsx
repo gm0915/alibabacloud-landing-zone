@@ -156,6 +156,20 @@ describe('Chief of Staff', () => {
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(row).not.toHaveClass('aw-chief-tucked');
   });
+  it('sends when randomUUID is missing in an HTTP context', async () => {
+    const webCrypto = globalThis.crypto;
+    Object.defineProperty(globalThis, 'crypto', { configurable: true, value: {} });
+    try {
+      const user = userEvent.setup(); mount();
+      await user.click(screen.getByRole('button', { name: '打开 Chief of Staff' }));
+      await screen.findByText('有什么可以帮你？');
+      await user.type(screen.getByRole('textbox', { name: '输入消息' }), 'Hello');
+      await user.click(screen.getByRole('button', { name: '发送' }));
+      await waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith(100, 'Hello', expect.any(String), '/workitems/128'));
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', { configurable: true, value: webCrypto });
+    }
+  });
   it('allows disabling page context and starting a separate conversation', async () => {
     const user = userEvent.setup(); mount();
     await user.click(screen.getByRole('button', { name: '打开 Chief of Staff' }));

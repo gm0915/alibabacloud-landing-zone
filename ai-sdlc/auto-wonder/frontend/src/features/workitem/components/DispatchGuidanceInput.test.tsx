@@ -21,6 +21,21 @@ it('preserves instructions and retries with the same request key after a lost re
   await screen.findByText('redirect <script>');
   expect(screen.getByRole('textbox')).toHaveValue('');
 });
+it('sends when randomUUID is missing in an HTTP context', async () => {
+  const webCrypto = globalThis.crypto;
+  Object.defineProperty(globalThis, 'crypto', { configurable: true, value: {} });
+  vi.mocked(sendDispatchGuidance).mockResolvedValue([]);
+  try {
+    render(<DispatchGuidanceInput dispatchId={42} />);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'steer left' } });
+    fireEvent.click(screen.getByRole('button'));
+    await waitFor(() => expect(sendDispatchGuidance).toHaveBeenCalledWith(
+      42, 'steer left', expect.stringMatching(/^[a-zA-Z0-9-]{1,64}$/),
+    ));
+  } finally {
+    Object.defineProperty(globalThis, 'crypto', { configurable: true, value: webCrypto });
+  }
+});
 it('does not submit blank guidance', () => {
   render(<DispatchGuidanceInput dispatchId={42} />);
   fireEvent.change(screen.getByRole('textbox'), { target: { value: '   ' } });
