@@ -104,13 +104,14 @@
             AND (<include refid="pauseConfirmed"/> OR NOT EXISTS (SELECT 1 FROM dispatch_result_decision pin
                 WHERE pin.tenant_id=c.tenant_id AND pin.dispatch_id=c.dispatch_id
                   AND pin.executor_id &lt;=> p.executor_id AND pin.reason_code='PAUSE_CONFIRMED')))
-        <!-- Direct live consumers retain every issued candidate; the service also follows unresolved lineage. -->
+        <!-- Direct live consumers retain every issued candidate; the service also follows unresolved lineage.
+             Outer alias c stays in WHERE: MySQL rejects it in JOIN ... ON. -->
         AND NOT EXISTS (SELECT 1 FROM dispatch consumer JOIN dispatch source
-            ON source.tenant_id=c.tenant_id AND source.id=c.dispatch_id
-            WHERE consumer.tenant_id=source.tenant_id AND consumer.workitem_id=source.workitem_id
+            ON consumer.tenant_id=source.tenant_id AND consumer.workitem_id=source.workitem_id
               AND consumer.source_type=source.source_type
               AND (consumer.resume_from_dispatch_id=source.id OR consumer.delivery_source_dispatch_id=source.id)
-              AND consumer.status NOT IN ('PAUSED','SUCCEEDED','FAILED','TIMEOUT','CANCELED'))
+              AND consumer.status NOT IN ('PAUSED','SUCCEEDED','FAILED','TIMEOUT','CANCELED')
+            WHERE source.tenant_id=c.tenant_id AND source.id=c.dispatch_id)
     </sql>
 
     <select id="listObsolete" resultMap="checkpointMap">
