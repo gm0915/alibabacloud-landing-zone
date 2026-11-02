@@ -34,6 +34,8 @@ import com.aliyun.autowonder.workitem.WorkitemCommentDO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -1311,34 +1313,47 @@ class PackageContextAssemblerTest {
         assertEquals("bob_dev", humans.get(0).get("name"));
     }
 
+    /**
+     * 当前处理人是数字员工时，名册仍列出指派操作人，并把工单创建者标为需求决策人。
+     */
     @SuppressWarnings("unchecked")
     @Test
-    void rosterIncludesAssignOperatorEvenWhenAssigneeIsAgent() {
+    void rosterMarksWorkitemCreatorAsDecisionHumanWhenAssigneeIsAgent() {
         WorkitemDO w = new WorkitemDO();
         w.setId(200L);
         w.setTenantId(TENANT);
         w.setTitle("t"); w.setContentMd("c");
         w.setAssigneeType("AGENT");
         w.setAssigneeRef(10002L);
+        w.setCreatorId(9L);
         w.setAssignOperatorId(42L);
         when(workitemDao.findById(200L)).thenReturn(w);
         stubEmptyExceptRoster();
         when(squadMemberDao.listByAgent(400L)).thenReturn(List.of());
 
-        UserDO user = new UserDO();
-        user.setId(42L);
-        user.setNickname("Zhang");
-        stubHumanMembers(user);
+        UserDO creator = new UserDO();
+        creator.setId(9L);
+        creator.setNickname("Creator");
+        UserDO operator = new UserDO();
+        operator.setId(42L);
+        operator.setNickname("Zhang");
+        stubHumanMembers(creator, operator);
 
         PackageContext ctx = assembler.assemble(dispatch(), version());
         Map<String, Object> roster = ctx.getRoster();
         List<Map<String, Object>> humans = (List<Map<String, Object>>) roster.get("humanTeammates");
-        assertTrue(humans.stream().anyMatch(h ->
-                        Long.valueOf(42L).equals(h.get("userId"))
-                                && "指派操作人".equals(h.get("relation"))
-                                && "需求决策人".equals(h.get("role"))
-                                && "Zhang".equals(h.get("name"))),
-                "roster must include the assign-operator as 需求决策人 even when assignee is an AGENT");
+        assertThat(humans).anySatisfy(human -> {
+            assertThat(human.get("userId")).isEqualTo(9L);
+            assertThat(human.get("relation")).isEqualTo("工单创建者");
+            assertThat(human.get("role")).isEqualTo("需求决策人");
+            assertThat(human.get("name")).isEqualTo("Creator");
+        });
+        assertThat(humans).anySatisfy(human -> {
+            assertThat(human.get("userId")).isEqualTo(42L);
+            assertThat(human.get("relation")).isEqualTo("指派操作人");
+            assertThat(human.get("role")).isNull();
+            assertThat(human.get("name")).isEqualTo("Zhang");
+        });
     }
 
     @SuppressWarnings("unchecked")

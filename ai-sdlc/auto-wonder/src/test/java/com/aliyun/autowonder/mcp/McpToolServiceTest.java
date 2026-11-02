@@ -30,6 +30,8 @@ import com.aliyun.autowonder.squad.dto.CreateSquadRequest;
 import com.aliyun.autowonder.artifact.RequirementDocumentService;
 import com.aliyun.autowonder.artifact.ArtifactOwnerRef;
 import com.aliyun.autowonder.artifact.dto.ArtifactVO;
+import com.aliyun.autowonder.conversation.AgentConversationDO;
+import com.aliyun.autowonder.conversation.AgentConversationDao;
 import com.aliyun.autowonder.guidance.GuidanceService;
 import com.aliyun.autowonder.dispatch.DispatchDO;
 import com.aliyun.autowonder.dispatch.DispatchDao;
@@ -2012,6 +2014,68 @@ class McpToolServiceTest {
         assertEquals("13024", failure.getCode());
         assertEquals("workitem.comment.delivery_closed", failure.getMessageKey());
         verify(workitemService, never()).addComment(anyLong(), anyString(), anyList(), anyLong(), anyLong());
+    }
+
+    /**
+     * 需求澄清会话发出的评论作者是该会话的数字员工，不是令牌上的真人.
+     */
+    @Test
+    void clarificationConversationCommentIsAuthoredByTheDigitalEmployee() {
+        long clarificationAgentId = 40015L;
+        McpAccessTokenService.ExecutionScope scope = new McpAccessTokenService.ExecutionScope(
+                77L, 88L, 1, 14L, clarificationAgentId, 16L);
+        McpAccessTokenService.Principal actor = new McpAccessTokenService.Principal(
+                WORKSPACE_ID, USER_ID, 77L, WorkspaceAccessLevel.READ_WRITE,
+                McpAccessTokenService.CredentialType.CONVERSATION, scope);
+        when(workspaceService.activeAccessLevel(WORKSPACE_ID, USER_ID)).thenReturn(WorkspaceAccessLevel.READ_WRITE);
+        when(workspaceService.activeReadOnlyDomains(WORKSPACE_ID, USER_ID)).thenReturn(java.util.Set.of());
+        CommentVO comment = new CommentVO();
+        comment.setId(57L);
+        when(guidanceService.addAgentCommentWithInteraction(eq(WORKSPACE_ID), eq(99L), eq(clarificationAgentId),
+                eq(USER_ID), eq("需求已确认"), isNull(), isNull())).thenReturn(comment);
+
+        Object result = call(actor, "autowonder.add_workitem_comment",
+                Map.of("id", 99L, "contentMd", "需求已确认"));
+
+        assertSame(comment, result);
+        verify(guidanceService).addAgentCommentWithInteraction(eq(WORKSPACE_ID), eq(99L), eq(clarificationAgentId),
+                eq(USER_ID), eq("需求已确认"), isNull(), isNull());
+        verify(guidanceService, never()).addCommentWithInteraction(anyLong(), anyLong(), anyString(), any(), any(),
+                anyLong());
+    }
+
+    /**
+     * 没有回合范围的澄清令牌，用户是数字员工创建者，也就是固定的空间管理员；评论作者仍是数字员工.
+     */
+    @Test
+    void clarificationCommentWithoutTurnScopeIsNotTheFixedWorkspaceAdmin() {
+        long clarificationAgentId = 40015L;
+        AgentConversationDao conversations = mock(AgentConversationDao.class);
+        ReflectionTestUtils.setField(service, "conversationDao", conversations);
+        AgentConversationDO conversation = new AgentConversationDO();
+        conversation.setId(77L);
+        conversation.setTenantId(WORKSPACE_ID);
+        conversation.setAgentId(clarificationAgentId);
+        conversation.setChannel("WORKITEM_CLARIFICATION");
+        when(conversations.findById(WORKSPACE_ID, 77L)).thenReturn(conversation);
+        McpAccessTokenService.Principal actor = new McpAccessTokenService.Principal(
+                WORKSPACE_ID, USER_ID, 77L, WorkspaceAccessLevel.READ_WRITE,
+                McpAccessTokenService.CredentialType.CONVERSATION);
+        when(workspaceService.activeAccessLevel(WORKSPACE_ID, USER_ID)).thenReturn(WorkspaceAccessLevel.READ_WRITE);
+        when(workspaceService.activeReadOnlyDomains(WORKSPACE_ID, USER_ID)).thenReturn(java.util.Set.of());
+        CommentVO comment = new CommentVO();
+        comment.setId(58L);
+        when(guidanceService.addAgentCommentWithInteraction(eq(WORKSPACE_ID), eq(99L), eq(clarificationAgentId),
+                eq(USER_ID), eq("需求已确认"), isNull(), isNull())).thenReturn(comment);
+
+        Object result = call(actor, "autowonder.add_workitem_comment",
+                Map.of("id", 99L, "contentMd", "需求已确认"));
+
+        assertSame(comment, result);
+        verify(guidanceService).addAgentCommentWithInteraction(eq(WORKSPACE_ID), eq(99L), eq(clarificationAgentId),
+                eq(USER_ID), eq("需求已确认"), isNull(), isNull());
+        verify(guidanceService, never()).addCommentWithInteraction(anyLong(), anyLong(), anyString(), any(), any(),
+                anyLong());
     }
 
     @Test

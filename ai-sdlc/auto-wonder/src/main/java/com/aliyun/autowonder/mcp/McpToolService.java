@@ -662,6 +662,8 @@ public class McpToolService {
     private ScheduledTaskCapabilityGuard capabilityGuard;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private ScheduledTaskRunCommentService scheduledTaskRunCommentService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.aliyun.autowonder.conversation.AgentConversationDao conversationDao;
     @org.springframework.beans.factory.annotation.Autowired
     private AuditLogService auditLogService;
     @org.springframework.beans.factory.annotation.Autowired
@@ -2107,6 +2109,16 @@ public class McpToolService {
         return workspaceId;
     }
 
+    /**
+     * 按工具名执行已通过权限闸门的 MCP 调用.
+     * 需求澄清会话发评论时，作者是该会话的数字员工，不是令牌上的真人。没有回合范围的旧令牌，这个真人是数字员工创建者，通常是固定的空间管理员。
+     *
+     * @param context 已解析的工具执行身份
+     * @param name 工具名
+     * @param safeArgs 工具参数，调用方已保证非 null
+     * @return 工具结果；无载荷的删除类工具返回删除标记
+     * @throws BizException 参数非法、无权限或业务拒绝时抛出
+     */
     private Object invoke(ToolExecutionContext context, String name,
                           Map<String, Object> safeArgs) {
         if (isDispatchCredential(context)
@@ -2239,6 +2251,12 @@ public class McpToolService {
                 // Both write entries save the comment and start its interactions in one transaction, so a
                 // closed delivery rolls the saved comment back together with the notice.
                 if (owner == null) {
+                    Long clarificationAgentId = clarificationCommentAgentId(context);
+                    if (clarificationAgentId != null) {
+                        yield guidanceService.addAgentCommentWithInteraction(context.workspaceId(), workitemId,
+                                clarificationAgentId, context.userId(), req.getContentMd(), req.getTargetHumanIds(),
+                                req.getTargetAgentIds());
+                    }
                     yield guidanceService.addCommentWithInteraction(context.workspaceId(), workitemId,
                             req.getContentMd(), req.getTargetHumanIds(), req.getTargetAgentIds(), context.userId());
                 }
@@ -3516,6 +3534,34 @@ public class McpToolService {
 
     private boolean isDispatchCredential(ToolExecutionContext context) {
         return context.credentialType() == McpAccessTokenService.CredentialType.DISPATCH;
+    }
+
+    /**
+     * 需求澄清会话发评论时返回该会话的数字员工.
+     * 回合令牌的执行范围里带有数字员工。没有执行范围的旧令牌，用户是数字员工创建者，通常是固定的空间管理员，不能当作评论作者.
+     *
+     * @param context 工具执行身份
+     * @return 数字员工 id；不是需求澄清会话时返回 null
+     */
+    private Long clarificationCommentAgentId(ToolExecutionContext context) {
+        if (context.credentialType() != McpAccessTokenService.CredentialType.CONVERSATION) {
+            return null;
+        }
+        McpAccessTokenService.ExecutionScope scope = context.executionScope();
+        if (scope != null) {
+            return scope.agentId();
+        }
+        if (conversationDao == null || context.workspaceId() == null) {
+            return null;
+        }
+        final String clarificationChannel = "WORKITEM_CLARIFICATION";
+        com.aliyun.autowonder.conversation.AgentConversationDO conversation =
+                conversationDao.findById(context.workspaceId(), context.tokenId());
+        if (conversation == null || !clarificationChannel.equals(conversation.getChannel())
+                || conversation.getAgentId() == null) {
+            return null;
+        }
+        return conversation.getAgentId();
     }
 
     private Object readDispatchTrace(ToolExecutionContext context, String name, Map<String, Object> args) {

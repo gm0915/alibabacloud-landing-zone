@@ -23,6 +23,7 @@ import org.mockito.InOrder;
 import org.slf4j.MDC;
 import org.springframework.context.ApplicationEventPublisher;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -35,7 +36,7 @@ class HandoffServiceTest {
 
     @BeforeEach
     void setUpHumanMember() {
-        for (long id : new long[]{77L, 42L, 7L}) {
+        for (long id : new long[]{77L, 42L, 9L, 7L}) {
             UserDO user = new UserDO();
             user.setId(id);
             user.setStatus(0);
@@ -347,6 +348,60 @@ class HandoffServiceTest {
         assertEquals(HandoffResult.Status.HUMAN_ASSIGNED, result.status());
         verify(workitemDao).updateAssignee(500L, 100L, "HUMAN", 42L, 3, 0L);
         verify(dispatchService, never()).enqueue(anyLong(), anyLong(), anyLong(), anyLong(), anyInt(), anyLong());
+    }
+
+    /**
+     * 状态流转交接真人时，目标不是用户 ID，指派给工单创建者，不指派给工作空间所有者。
+     */
+    @Test
+    void unresolvedHumanTargetAssignsWorkitemCreatorInsteadOfWorkspaceOwner() {
+        WorkitemDao workitemDao = mock(WorkitemDao.class);
+        WorkitemEventDao eventDao = mock(WorkitemEventDao.class);
+        WorkitemDO workitem = workitem(500L, 100L, 3);
+        workitem.setCreatorId(9L);
+        workitem.setAssignOperatorId(7L);
+        when(workitemDao.findByIdForUpdate(500L, 100L)).thenReturn(workitem);
+        WorkspaceDO workspace = new WorkspaceDO();
+        workspace.setId(100L);
+        workspace.setOwnerId(7L);
+        when(workspaceDao.findById(100L)).thenReturn(workspace);
+        when(workitemDao.updateAssignee(500L, 100L, "HUMAN", 9L, 3, 0L)).thenReturn(1);
+        HandoffService service = new HandoffService(workitemDao, mock(DispatchService.class),
+                mock(AgentRoleResolver.class), mock(AgentSdlcResolver.class), workspaceDao, workspaceMemberDao, userDao, eventDao);
+
+        HandoffResult result = service.handle(100L, 500L, 300L, "需求决策人", "HUMAN");
+
+        assertThat(result.status()).isEqualTo(HandoffResult.Status.HUMAN_ASSIGNED);
+        assertThat(result.targetRef()).isEqualTo(9L);
+        verify(workitemDao).updateAssignee(500L, 100L, "HUMAN", 9L, 3, 0L);
+        verify(workspaceDao, never()).findById(anyLong());
+    }
+
+    /**
+     * 工单创建者已不是在职成员时，真人交接退回工作空间所有者。
+     */
+    @Test
+    void inactiveCreatorFallsBackToWorkspaceOwner() {
+        WorkitemDao workitemDao = mock(WorkitemDao.class);
+        WorkitemDO workitem = workitem(500L, 100L, 3);
+        workitem.setCreatorId(9L);
+        workitem.setAssignOperatorId(42L);
+        when(workitemDao.findByIdForUpdate(500L, 100L)).thenReturn(workitem);
+        userDao.findById(9L).setStatus(1);
+        WorkspaceDO workspace = new WorkspaceDO();
+        workspace.setId(100L);
+        workspace.setOwnerId(7L);
+        when(workspaceDao.findById(100L)).thenReturn(workspace);
+        when(workitemDao.updateAssignee(500L, 100L, "HUMAN", 7L, 3, 0L)).thenReturn(1);
+        HandoffService service = new HandoffService(workitemDao, mock(DispatchService.class),
+                mock(AgentRoleResolver.class), mock(AgentSdlcResolver.class), workspaceDao,
+                workspaceMemberDao, userDao, mock(WorkitemEventDao.class));
+
+        HandoffResult result = service.handle(100L, 500L, 300L, "需求决策人", "HUMAN");
+
+        assertThat(result.status()).isEqualTo(HandoffResult.Status.HUMAN_ASSIGNED);
+        assertThat(result.targetRef()).isEqualTo(7L);
+        verify(workitemDao).updateAssignee(500L, 100L, "HUMAN", 7L, 3, 0L);
     }
 
     @Test
