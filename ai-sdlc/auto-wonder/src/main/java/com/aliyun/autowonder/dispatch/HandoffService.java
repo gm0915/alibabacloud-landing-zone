@@ -186,24 +186,44 @@ public class HandoffService {
         return HandoffResult.agent(targetAgentId, d.getId());
     }
 
+    /**
+     * 把工单交给真人。
+     * 目标不是用户 ID 时，在职的工单创建者优先。创建者已不是在职成员时退回工作空间所有者。
+     * 没有创建者时再用指派操作人，仍缺失且允许兜底时才用工作空间所有者。
+     *
+     * @param tenantId 工作空间 ID
+     * @param workitemId 工单 ID
+     * @param dispatchId 来源派发 ID
+     * @param to 交接目标；能解析成用户 ID 时按该用户，否则按上面的顺序兜底
+     * @param w 已锁定的工单
+     * @param fallbackReason 交接原因码
+     * @param allowTenantOwnerFallback 创建者不可用或没有其他真人时，是否允许落到工作空间所有者
+     * @return 真人指派结果；明确指定的目标不是在职工单成员时拒绝
+     */
     private HandoffResult handleHumanHandoff(long tenantId, long workitemId, long dispatchId, String to, WorkitemDO w,
             String fallbackReason, boolean allowTenantOwnerFallback) {
         Long resolved = resolveConcreteHuman(to);
+        if (resolved == null) {
+            Long creatorId = w.getCreatorId();
+            boolean creatorPresent = creatorId != null && creatorId.longValue() > 0;
+            if (creatorPresent && activeWorkspaceMember(tenantId, creatorId)) {
+                resolved = creatorId;
+            } else if (creatorPresent && allowTenantOwnerFallback) {
+                resolved = resolveTenantAdminUserId(tenantId);
+            }
+        }
         if (resolved == null) {
             resolved = w.getAssignOperatorId();
         }
         if (resolved == null && allowTenantOwnerFallback) {
             resolved = resolveTenantAdminUserId(tenantId);
         }
-        if (resolved == null || resolved <= 0) {
+        if (resolved == null || resolved.longValue() <= 0) {
             log.info("handoff human target unresolved and no fallback tenantId={} workitemId={} to={}",
                     tenantId, workitemId, to);
             return HandoffResult.rejected("TARGET_UNRESOLVED", "no agent or human fallback resolved");
         }
-        UserDO user = userDao.findById(resolved);
-        WorkspaceMemberDO member = workspaceMemberDao.findByWorkspaceAndUser(tenantId, resolved);
-        if (user == null || !Integer.valueOf(0).equals(user.getStatus())
-                || member == null || !Integer.valueOf(0).equals(member.getStatus())) {
+        if (!activeWorkspaceMember(tenantId, resolved)) {
             return HandoffResult.rejected("TARGET_NOT_WORKSPACE_MEMBER", "human target is not an active workspace member");
         }
         if ("HUMAN".equalsIgnoreCase(w.getAssigneeType()) && resolved.equals(w.getAssigneeRef())) {
@@ -287,6 +307,24 @@ public class HandoffService {
                     tenantId, workitemId, dispatchId, fallbackReason, e);
             return AssignmentActor.systemFallback();
         }
+    }
+
+    /**
+     * 判断用户是否为该工作空间的在职成员。
+     *
+     * @param tenantId 工作空间 ID
+     * @param userId 用户 ID
+     * @return 用户账号和成员关系都处于在职时返回 true；ID 为空、停用或已离开时返回 false
+     */
+    private boolean activeWorkspaceMember(long tenantId, Long userId) {
+        if (userId == null || userId.longValue() <= 0) {
+            return false;
+        }
+        final int activeStatus = 0;
+        UserDO user = userDao.findById(userId);
+        WorkspaceMemberDO member = workspaceMemberDao.findByWorkspaceAndUser(tenantId, userId);
+        return user != null && Integer.valueOf(activeStatus).equals(user.getStatus())
+                && member != null && Integer.valueOf(activeStatus).equals(member.getStatus());
     }
 
     private Long resolveConcreteHuman(String to) {

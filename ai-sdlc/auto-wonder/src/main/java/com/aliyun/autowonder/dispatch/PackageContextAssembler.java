@@ -54,6 +54,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -440,10 +441,8 @@ public class PackageContextAssembler {
     }
 
     /**
-     * Roster the client Agent uses to pick a hand-off target:
-     * digital teammates (members of the acting agent's squads) + active workspace humans.
-     * AgentDO carries no role fields, so roleCode/roleName are resolved from the
-     * agent's online AgentVersionDO.
+     * 组装执行端选择交接目标的名册：当前数字员工所在小队的其他数字员工，以及工作空间里的在职真人。
+     * 数字员工角色取在线版本。工单创建者标为需求决策人，供状态流转后的真人交接使用；指派操作人只保留操作关系。
      */
     private Map<String, Object> buildRoster(long tenantId, long selfAgentId, WorkitemDO w) {
         Map<String, Object> roster = new LinkedHashMap<>();
@@ -481,6 +480,8 @@ public class PackageContextAssembler {
         roster.put("digitalTeammates", digital);
 
         List<Map<String, Object>> humans = new ArrayList<>();
+        final String workitemCreatorRelation = "工单创建者";
+        final String decisionHumanRole = "需求决策人";
         if (w != null && tenantId == w.getTenantId()) {
             List<Long> memberIds = workspaceMemberDao.listByTenant(tenantId).stream()
                     .map(WorkspaceMemberDO::getUserId).toList();
@@ -492,9 +493,11 @@ public class PackageContextAssembler {
                 human.put("userId", user.getId());
                 human.put("name", user.getNickname() != null && !user.getNickname().isBlank()
                         ? user.getNickname() : user.getUsername());
-                if (user.getId().equals(w.getAssignOperatorId())) {
+                if (Objects.equals(user.getId(), w.getCreatorId())) {
+                    human.put("relation", workitemCreatorRelation);
+                    human.put("role", decisionHumanRole);
+                } else if (user.getId().equals(w.getAssignOperatorId())) {
                     human.put("relation", "指派操作人");
-                    human.put("role", "需求决策人");
                 } else if ("HUMAN".equalsIgnoreCase(w.getAssigneeType()) && user.getId().equals(w.getAssigneeRef())) {
                     human.put("relation", "assignee");
                 } else {
@@ -680,17 +683,29 @@ public class PackageContextAssembler {
 
     public static List<Map<String, Object>> buildCapabilities(AgentSkillDao bindingDao, SkillDao catalogDao,
                                                        long tenantId, long versionId) {
+        return buildCapabilities(bindingDao, catalogDao, tenantId, versionId, false);
+    }
+
+    /** Chief requires every workspace extension; ordinary task compatibility remains unchanged. */
+    public static List<Map<String, Object>> buildCapabilities(AgentSkillDao bindingDao, SkillDao catalogDao,
+                                                       long tenantId, long versionId, boolean requireAll) {
         List<Map<String, Object>> capabilities = new ArrayList<>();
         List<AgentSkillDO> bindings = bindingDao.listByVersion(versionId);
         if (bindings == null) {
+            if (requireAll) throw new IllegalStateException("Chief workspace capability bindings were not loaded");
             return capabilities;
         }
         for (AgentSkillDO binding : bindings) {
+            if (requireAll && (binding == null || binding.getSkillId() == null
+                    || binding.getTenantId() == null || tenantId != binding.getTenantId())) {
+                throw new IllegalStateException("Chief workspace capability binding is invalid");
+            }
             if (binding == null || binding.getSkillId() == null || tenantId != binding.getTenantId()) {
                 continue;
             }
             SkillDO capability = catalogDao.findById(binding.getSkillId());
             if (capability == null) {
+                if (requireAll) throw new IllegalStateException("Chief required workspace capability is missing: " + binding.getSkillId());
                 log.warn("skip deleted bound capability agentVersionId={} skillId={}",
                         versionId, binding.getSkillId());
                 continue;

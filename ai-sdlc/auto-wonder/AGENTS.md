@@ -38,3 +38,9 @@ process or a successful curl.
 - `SystemMessages.render(key, args, diagnostic)` 使用当前请求上下文；没有请求上下文时默认中文。显式重载 `render(key, args, diagnostic, Locale)` 支持按接收者语言渲染。AuthFilter 与名为 `localeResolver` 的 bean 共用按权重解析 Accept-Language 的逻辑。禁止修改 JVM 默认语言，也禁止让请求语言上下文被子线程继承。必须保留错误码、HTTP 状态、追踪信息、请求 ID、业务载荷、外部/用户/AI 原始内容、诊断日志、持久化历史和协议分类。
 - 通知必须解析每位接收者现有的 `ui.locale` 偏好，并在持久化和投递前使用显式 Locale 渲染。新建或入队的 IM 任务必须保存接收者语言快照；已有且受支持的快照保持不变。现有快照不受支持或旧任务没有快照时，使用中文。读取、领取、重试和死信队列（DLQ）处理都必须使用该快照，禁止重新解析当前偏好或改写旧载荷和历史。只有显式声明且属于有限集合的来源意图，才允许翻译兜底标签；自行编写的内容、缺失或未知的来源意图保持原文。请求语言不得覆盖接收者偏好；禁止改写历史通知文案或诊断信息。
 - 增加双语边界及原始内容保留测试；由 Community 质量阶段通过唯一 lifecycle 验证入口运行后端测试，核实 SystemMessagesResourceTest 等资源与响应边界测试的真实结果。不得以旧报告代替当前验收。
+
+<!-- uupt-cursor-java:start -->
+
+新建或修改 Java（含测试）之前，先用 Read 打开项目 `.cursor/rules/share-java-coding-rule.mdc`，再按其中清单逐份 Read。回复里列出已打开的规则文件名之前，不得写 Java。该文件优先于技能；uupt-coding-shared-rules 里「不要打开 rules/」不适用于写 Java。
+
+<!-- uupt-cursor-java:end -->
