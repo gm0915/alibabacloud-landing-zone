@@ -140,6 +140,12 @@ export function MembersPage() {
 
   const columns: ColumnsType<MemberVO> = [
     {
+      title: t('userId'),
+      dataIndex: 'userId',
+      width: 120,
+      render: (userId: number) => String(userId),
+    },
+    {
       title: t('user'),
       key: 'user',
       render: (_, member) => (

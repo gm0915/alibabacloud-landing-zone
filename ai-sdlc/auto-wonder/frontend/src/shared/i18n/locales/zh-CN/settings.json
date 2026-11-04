@@ -19,6 +19,7 @@
   "addMember": "添加成员",
   "transferOwner": "移交 Owner",
   "user": "用户",
+  "userId": "用户 ID",
   "workspaceOwner": "工作空间所有者",
   "joinedAt": "加入时间",
   "removeMember": "移除成员",

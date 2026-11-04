@@ -19,6 +19,7 @@
   "addMember": "Add member",
   "transferOwner": "Transfer Owner",
   "user": "User",
+  "userId": "User ID",
   "workspaceOwner": "Workspace Owner",
   "joinedAt": "Joined",
   "removeMember": "Remove member",

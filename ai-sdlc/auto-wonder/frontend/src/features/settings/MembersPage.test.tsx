@@ -155,6 +155,12 @@ describe('MembersPage', () => {
     renderPage();
 
     await screen.findByText('admin@co.com');
+    const headers = screen.getAllByRole('columnheader').map((header) => header.textContent);
+    expect(headers.slice(0, 3)).toEqual(['用户 ID', '用户', '角色']);
+    const adminRow = screen.getByText('admin@co.com').closest('tr');
+    const developerRow = screen.getByText('dev1@co.com').closest('tr');
+    expect(within(adminRow!).getByText('1')).toBeInTheDocument();
+    expect(within(developerRow!).getByText('2')).toBeInTheDocument();
     expect(screen.getByText('工作空间所有者')).toBeInTheDocument();
     expect(screen.getByText('读写者')).toBeInTheDocument();
     expect(screen.getByText('需求管理员')).toBeInTheDocument();
