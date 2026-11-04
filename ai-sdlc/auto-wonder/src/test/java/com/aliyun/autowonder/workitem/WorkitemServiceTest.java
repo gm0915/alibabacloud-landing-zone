@@ -36,6 +36,8 @@ import com.aliyun.autowonder.statemachine.StatusTemplateDao;
 import com.aliyun.autowonder.statemachine.StatusTransitionDao;
 import com.aliyun.autowonder.user.UserDO;
 import com.aliyun.autowonder.user.UserDao;
+import com.aliyun.autowonder.workspace.WorkspaceMemberDO;
+import com.aliyun.autowonder.workspace.WorkspaceMemberDao;
 import com.aliyun.autowonder.websocket.PresenceManager;
 import com.aliyun.autowonder.workitem.dto.AgentDeliveryProgressVO;
 import com.aliyun.autowonder.workitem.dto.CreateWorkitemRequest;
@@ -60,6 +62,8 @@ import java.util.Map;
 import java.util.ArrayList;
 import java.util.Arrays;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -197,6 +201,128 @@ class WorkitemServiceTest {
                         && w.getTemplateId() == 200L && w.getStatusNodeId() == 300L
                         && "HUMAN".equals(w.getAssigneeType()) && w.getAssigneeRef() == 7L));
         verify(eventDao).insert(argThat((WorkitemEventDO e) -> "CREATE".equals(e.getEventType())));
+    }
+
+    /**
+     * 指定其他有效成员作为创建人时，工单创建人改为该用户，处理人和创建事件仍记操作人.
+     */
+    @Test
+    void createRecordsAnotherActiveMemberAsCreator() {
+        when(templateDao.findDefaultByType("REQ")).thenReturn(template(200L));
+        when(nodeDao.findInitNode(200L)).thenReturn(node(300L, "new"));
+        when(userDao.findById(9L)).thenReturn(human(9L, "李四", "lisi"));
+        when(userDao.findByIdIncludingDeleted(9L)).thenReturn(human(9L, "李四", "lisi"));
+        when(userDao.findByIdIncludingDeleted(7L)).thenReturn(human(7L, "张三", "zhangsan"));
+        doAnswer(inv -> {
+            inv.<WorkitemDO>getArgument(0).setId(10001L);
+            return null;
+        }).when(workitemDao).insert(any());
+        WorkspaceMemberDao memberDao = mock(WorkspaceMemberDao.class);
+        WorkspaceMemberDO member = new WorkspaceMemberDO();
+        final int activeMemberStatus = 0;
+        final int memberNotDeleted = 0;
+        member.setStatus(activeMemberStatus);
+        member.setIsDeleted(memberNotDeleted);
+        when(memberDao.findByWorkspaceAndUser(100L, 9L)).thenReturn(member);
+        ReflectionTestUtils.setField(service, "workspaceMemberDao", memberDao);
+        CreateWorkitemRequest req = new CreateWorkitemRequest();
+        req.setWorkType("REQ");
+        req.setTitle("代建需求");
+
+        WorkitemVO vo = service.createWithOrigin(req, 100L, 7L, 9L, null, null);
+
+        assertThat(vo.getCreatorId()).isEqualTo(9L);
+        assertThat(vo.getAssigneeRef()).isEqualTo(7L);
+        assertThat(vo.getCreatorName()).isEqualTo("李四");
+        ArgumentCaptor<WorkitemDO> inserted = ArgumentCaptor.forClass(WorkitemDO.class);
+        verify(workitemDao).insert(inserted.capture());
+        assertThat(inserted.getValue().getCreatorId()).isEqualTo(9L);
+        assertThat(inserted.getValue().getAssigneeRef()).isEqualTo(7L);
+        verify(eventDao).insert(argThat((WorkitemEventDO event) ->
+                "CREATE".equals(event.getEventType()) && Long.valueOf(7L).equals(event.getActorRef())));
+    }
+
+    /**
+     * 指定的创建人不是本空间有效成员时拒绝建单，且不写入工单.
+     */
+    @Test
+    void createRejectsCreatorOutsideWorkspace() {
+        WorkspaceMemberDao memberDao = mock(WorkspaceMemberDao.class);
+        when(memberDao.findByWorkspaceAndUser(100L, 9L)).thenReturn(null);
+        ReflectionTestUtils.setField(service, "workspaceMemberDao", memberDao);
+        CreateWorkitemRequest req = new CreateWorkitemRequest();
+        req.setWorkType("REQ");
+        req.setTitle("代建需求");
+
+        assertThatThrownBy(() -> service.createWithOrigin(req, 100L, 7L, 9L, null, null))
+                .isInstanceOf(BizException.class)
+                .extracting(error -> ((BizException) error).getCode())
+                .isEqualTo("11001");
+        verify(workitemDao, never()).insert(any());
+    }
+
+    /**
+     * 指定的创建人已停用或已删除时拒绝建单，且不写入工单.
+     */
+    @Test
+    void createRejectsInactiveCreator() {
+        WorkspaceMemberDao memberDao = mock(WorkspaceMemberDao.class);
+        WorkspaceMemberDO member = new WorkspaceMemberDO();
+        final int inactiveMemberStatus = 1;
+        final int memberNotDeleted = 0;
+        member.setStatus(inactiveMemberStatus);
+        member.setIsDeleted(memberNotDeleted);
+        when(memberDao.findByWorkspaceAndUser(100L, 9L)).thenReturn(member);
+        ReflectionTestUtils.setField(service, "workspaceMemberDao", memberDao);
+        CreateWorkitemRequest req = new CreateWorkitemRequest();
+        req.setWorkType("REQ");
+        req.setTitle("代建需求");
+
+        assertThatThrownBy(() -> service.createWithOrigin(req, 100L, 7L, 9L, null, null))
+                .isInstanceOf(BizException.class)
+                .extracting(error -> ((BizException) error).getCode())
+                .isEqualTo("11001");
+        verify(workitemDao, never()).insert(any());
+    }
+
+    /**
+     * 创建人不是正整数时拒绝建单，且不写入工单.
+     */
+    @Test
+    void createRejectsNonPositiveCreator() {
+        CreateWorkitemRequest req = new CreateWorkitemRequest();
+        req.setWorkType("REQ");
+        req.setTitle("代建需求");
+
+        assertThatThrownBy(() -> service.createWithOrigin(req, 100L, 7L, 0L, null, null))
+                .isInstanceOf(BizException.class)
+                .extracting(error -> ((BizException) error).getCode())
+                .isEqualTo("10001");
+        verify(workitemDao, never()).insert(any());
+    }
+
+    /**
+     * 创建人与操作人相同时不查询成员身份，创建人仍是操作人.
+     */
+    @Test
+    void createKeepsOperatorWhenCreatorMatches() {
+        when(templateDao.findDefaultByType("REQ")).thenReturn(template(200L));
+        when(nodeDao.findInitNode(200L)).thenReturn(node(300L, "new"));
+        when(userDao.findByIdIncludingDeleted(7L)).thenReturn(human(7L, "张三", "zhangsan"));
+        doAnswer(inv -> {
+            inv.<WorkitemDO>getArgument(0).setId(10001L);
+            return null;
+        }).when(workitemDao).insert(any());
+        WorkspaceMemberDao memberDao = mock(WorkspaceMemberDao.class);
+        ReflectionTestUtils.setField(service, "workspaceMemberDao", memberDao);
+        CreateWorkitemRequest req = new CreateWorkitemRequest();
+        req.setWorkType("REQ");
+        req.setTitle("自己创建");
+
+        WorkitemVO vo = service.createWithOrigin(req, 100L, 7L, 7L, null, null);
+
+        assertThat(vo.getCreatorId()).isEqualTo(7L);
+        verifyNoInteractions(memberDao);
     }
 
     @Test

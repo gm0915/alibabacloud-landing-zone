@@ -117,6 +117,8 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Set;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -1807,6 +1809,73 @@ class McpToolServiceTest {
                 && Long.valueOf(12L).equals(req.getAssigneeRef())
                 && Long.valueOf(8L).equals(req.getSdlcId())
                 && Long.valueOf(4L).equals(req.getSquadId())), eq(100L), eq(7L));
+    }
+
+    /**
+     * 创单参数声明可选的 creatorId，且不把它列为必填.
+     */
+    @Test
+    void createWorkitemSchemaExposesOptionalCreatorId() {
+        Map<String, Object> schema = schemaFor("autowonder.create_workitem");
+        Map<String, Object> creatorId = property(schema, "creatorId");
+
+        assertThat(creatorId.get("type")).isEqualTo("integer");
+        assertThat(String.valueOf(creatorId.get("description"))).contains("current authenticated user");
+        assertThat(String.valueOf(creatorId.get("description"))).contains("active member");
+        assertThat(schema.get("required")).isEqualTo(List.of("workspaceId", "workType", "title"));
+        assertThat(toolFor("autowonder.create_workitem").getDescription()).contains("creatorId is optional");
+    }
+
+    /**
+     * 传入其他用户作为创建人时，操作人仍是当前用户，创建人改为该用户.
+     */
+    @Test
+    void createWorkitemDelegatesExplicitCreatorAndKeepsOperator() {
+        WorkitemVO created = new WorkitemVO();
+        created.setId(99L);
+        when(workitemService.createWithOrigin(any(CreateWorkitemRequest.class), eq(100L), eq(7L), eq(9L),
+                isNull(), isNull())).thenReturn(created);
+
+        Object result = call(principal, "autowonder.create_workitem",
+                Map.of("workType", "REQ", "title", "MCP create", "creatorId", 9L));
+
+        assertThat(result).isSameAs(created);
+        verify(workitemService).createWithOrigin(argThat(req -> "REQ".equals(req.getWorkType())
+                && "MCP create".equals(req.getTitle())), eq(100L), eq(7L), eq(9L), isNull(), isNull());
+        verify(workitemService, never()).create(any(CreateWorkitemRequest.class), anyLong(), anyLong());
+    }
+
+    /**
+     * creatorId 与当前用户相同时，仍按当前用户建单，不走代建.
+     */
+    @Test
+    void createWorkitemKeepsCurrentUserWhenCreatorMatchesCaller() {
+        WorkitemVO created = new WorkitemVO();
+        created.setId(99L);
+        when(workitemService.create(any(CreateWorkitemRequest.class), eq(100L), eq(7L))).thenReturn(created);
+
+        Object result = call(principal, "autowonder.create_workitem",
+                Map.of("workType", "REQ", "title", "MCP create", "creatorId", 7L));
+
+        assertThat(result).isSameAs(created);
+        verify(workitemService).create(any(CreateWorkitemRequest.class), eq(100L), eq(7L));
+        verify(workitemService, never()).createWithOrigin(any(CreateWorkitemRequest.class), anyLong(), anyLong(),
+                anyLong(), any(), any());
+    }
+
+    /**
+     * creatorId 不是整数时拒绝调用，且不创建工单.
+     */
+    @Test
+    void createWorkitemRejectsNonNumericCreatorId() {
+        assertThatThrownBy(() -> call(principal, "autowonder.create_workitem",
+                Map.of("workType", "REQ", "title", "MCP create", "creatorId", "nope")))
+                .isInstanceOf(BizException.class)
+                .extracting(error -> ((BizException) error).getCode())
+                .isEqualTo("27003");
+        verify(workitemService, never()).create(any(CreateWorkitemRequest.class), anyLong(), anyLong());
+        verify(workitemService, never()).createWithOrigin(any(CreateWorkitemRequest.class), anyLong(), anyLong(),
+                anyLong(), any(), any());
     }
 
     @Test

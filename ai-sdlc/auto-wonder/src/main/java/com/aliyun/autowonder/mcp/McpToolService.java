@@ -763,6 +763,9 @@ public class McpToolService {
                         + "workType must be one of REQ (requirement), BUG (defect), or TASK (task). "
                         + "When assigneeType is omitted the workitem is assigned to the creator (HUMAN), "
                         + "priority defaults to 2, no SDLC is bound, and no scheduling is triggered. "
+                        + "creatorId is optional and defaults to the current authenticated user. "
+                        + "Pass another active workspace member's user id to record that user as the creator; "
+                        + "the caller remains the operator and the default assignee stays the current user. "
                         + "To assign to a digital worker, pass assigneeType=AGENT with assigneeRef=<agentId>; "
                         + "the SDLC is resolved automatically by the server (agent default first, then workitem-type match); "
                         + "do NOT ask the user to choose an SDLC and only pass sdlcId when the user explicitly names one. "
@@ -792,6 +795,11 @@ public class McpToolService {
                                                 + "key decisions and boundaries, acceptance criteria, constraints/dependencies/risks, "
                                                 + "and expected deliverables. If these are unclear, ask the user before creating the workitem."),
                                 prop("priority", "integer", "Optional. Priority value; defaults to 2 when omitted."),
+                                prop("creatorId", "integer", "Optional. Creator user id. "
+                                        + "Omit it to record the current authenticated user. "
+                                        + "Pass another user's id to record that user as the creator. "
+                                        + "The user must be an active member of this workspace. "
+                                        + "The caller remains the operator, and the default assignee stays the current user."),
                                 prop("assigneeType", "string", "Optional. Assignee type: HUMAN or AGENT. "
                                         + "When omitted the workitem is assigned to the creator and no SDLC is bound and no scheduling is triggered."),
                                 prop("assigneeRef", "integer", "Optional. Assignee reference id: "
@@ -2112,6 +2120,7 @@ public class McpToolService {
     /**
      * 按工具名执行已通过权限闸门的 MCP 调用.
      * 需求澄清会话发评论时，作者是该会话的数字员工，不是令牌上的真人。没有回合范围的旧令牌，这个真人是数字员工创建者，通常是固定的空间管理员。
+     * 创单未传 creatorId 时，创建人是当前用户；传入其他用户时，创建人改为该用户，操作人仍是当前用户。
      *
      * @param context 已解析的工具执行身份
      * @param name 工具名
@@ -2136,12 +2145,18 @@ public class McpToolService {
                 Date scheduledStartAt = isoInstantArgument(safeArgs, "scheduledStartAt");
                 CreateWorkitemRequest request = toBean(safeArgs, CreateWorkitemRequest.class);
                 request.setScheduledStartAt(scheduledStartAt);
+                Long requestedCreatorId = lng(safeArgs, "creatorId");
+                long creatorId = requestedCreatorId == null ? context.userId() : requestedCreatorId.longValue();
                 if (isDispatchCredential(context)) {
                     DispatchDO dispatch = requireDispatchOwner(context);
                     if (dispatch.executionSourceType() == ExecutionSourceType.SCHEDULED_TASK_RUN) {
                         yield workitemService.createWithOrigin(request, context.workspaceId(), context.userId(),
-                                ExecutionSourceType.SCHEDULED_TASK_RUN.name(), dispatch.getWorkitemId());
+                                creatorId, ExecutionSourceType.SCHEDULED_TASK_RUN.name(), dispatch.getWorkitemId());
                     }
+                }
+                if (creatorId != context.userId()) {
+                    yield workitemService.createWithOrigin(request, context.workspaceId(), context.userId(),
+                            creatorId, null, null);
                 }
                 yield workitemService.create(request, context.workspaceId(), context.userId());
             }

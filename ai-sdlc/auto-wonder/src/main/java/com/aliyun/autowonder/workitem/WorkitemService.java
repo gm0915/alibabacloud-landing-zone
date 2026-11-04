@@ -257,15 +257,38 @@ public class WorkitemService {
                 externalWorkitemLinkDao, null, eventPublisher);
     }
 
+    /**
+     * 以当前操作人作为创建人新建工作项.
+     *
+     * @param req 创建请求
+     * @param tenantId 工作空间 ID
+     * @param userId 操作人用户 ID，同时作为创建人
+     * @return 新建的工作项
+     * @throws BizException 工作项类型非法或状态模板缺失时抛出
+     */
     @Transactional
     public WorkitemVO create(CreateWorkitemRequest req, long tenantId, long userId) {
-        return createWithOrigin(req, tenantId, userId, null, null);
+        return createWithOrigin(req, tenantId, userId, userId, null, null);
     }
 
-    /** Origin is accepted only by trusted server callers, never request JSON. */
+    /**
+     * 按可信调用方给出的来源新建工作项.
+     * 来源只接受服务端传入，不从请求 JSON 读取。创建人与操作人相同时不额外校验成员身份。
+     * 指定其他用户时，该用户必须是本工作空间的有效成员。操作人仍写入创建事件，默认处理人仍是操作人。
+     *
+     * @param req 创建请求
+     * @param workspaceId 工作空间 ID
+     * @param userId 操作人用户 ID
+     * @param creatorId 创建人用户 ID
+     * @param originType 来源类型；没有来源时为空
+     * @param originId 来源 ID；没有来源时为空
+     * @return 新建的工作项
+     * @throws BizException 创建人非法或不是本空间有效成员、工作项类型非法或状态模板缺失时抛出
+     */
     @Transactional
     public WorkitemVO createWithOrigin(CreateWorkitemRequest req, long workspaceId, long userId,
-                                       String originType, Long originId) {
+                                       long creatorId, String originType, Long originId) {
+        requireActiveCreator(workspaceId, userId, creatorId);
         if (req.getWorkType() == null || !WORK_TYPES.contains(req.getWorkType())) {
             throw new BizException(ErrorCode.WORK_TYPE_INVALID);
         }
@@ -284,14 +307,14 @@ public class WorkitemService {
         w.setContentMd(req.getContentMd());
         w.setTemplateId(template.getId());
         w.setStatusNodeId(init.getId());
-        // Default the assignee to the creator; an explicit assignee on the request is
+        // Default the assignee to the operator. An explicit assignee on the request is
         // applied below via assign(...) so delivery start (squad validation, SDLC
         // binding, assign-operator, ASSIGN event, WorkitemAssignedEvent) matches a
-        // separate post-create assignment exactly.
+        // separate post-create assignment exactly. Another creator only replaces creatorId.
         w.setAssigneeType("HUMAN");
         w.setAssigneeRef(userId);
         w.setPriority(req.getPriority() == null ? 2 : req.getPriority());
-        w.setCreatorId(userId);
+        w.setCreatorId(creatorId);
         w.setOriginType(originType);
         w.setOriginId(originId);
         w.setVersion(0);
@@ -307,6 +330,38 @@ public class WorkitemService {
                     req.getSdlcId(), req.getSquadId(), req.getScheduledStartAt(), workspaceId, userId);
         }
         return toVO(w);
+    }
+
+    /**
+     * 指定其他创建人时，确认该用户是本工作空间的未删除有效成员.
+     * 创建人与操作人相同时直接返回。
+     *
+     * @param workspaceId 工作空间 ID
+     * @param operatorUserId 操作人用户 ID
+     * @param creatorId 创建人用户 ID
+     * @throws BizException 创建人不是正整数，或不是本空间有效成员时抛出
+     */
+    private void requireActiveCreator(long workspaceId, long operatorUserId, long creatorId) {
+        if (creatorId == operatorUserId) {
+            return;
+        }
+        final long minimumCreatorId = 1L;
+        if (creatorId < minimumCreatorId) {
+            throw BizException.keyed(ErrorCode.PARAM_INVALID, "workitem.creator_id_invalid", null,
+                    "创建人必须是正整数");
+        }
+        final int activeMemberStatus = 0;
+        final int memberNotDeleted = 0;
+        WorkspaceMemberDO member = workspaceMemberDao == null
+                ? null
+                : workspaceMemberDao.findByWorkspaceAndUser(workspaceId, creatorId);
+        boolean activeMember = member != null
+                && Integer.valueOf(activeMemberStatus).equals(member.getStatus())
+                && Integer.valueOf(memberNotDeleted).equals(member.getIsDeleted());
+        if (!activeMember || userDao == null || userDao.findById(creatorId) == null) {
+            throw BizException.keyed(ErrorCode.WORKSPACE_NOT_MEMBER, "workitem.creator_not_member", null,
+                    "指定的创建人不是该工作空间的有效成员");
+        }
     }
 
     public WorkitemVO get(long id) {
