@@ -1950,6 +1950,23 @@ class McpToolServiceTest {
         assertSame(assigned, result);
     }
 
+    /**
+     * 传入交接人时，指派把该用户交给工单服务，不走不带交接人的指派.
+     */
+    @Test
+    void assignWorkitemPassesHandoffUserWhenProvided() {
+        WorkitemVO assigned = new WorkitemVO();
+        assigned.setId(99L);
+        when(workitemService.assign(99L, "AGENT", 12L, null, null, null, 100L, 7L, 77L)).thenReturn(assigned);
+
+        Object result = call(principal, "autowonder.assign_workitem",
+                Map.of("id", 99L, "assigneeType", "AGENT", "assigneeRef", 12L, "assignOperatorId", 77));
+
+        assertThat(result).isSameAs(assigned);
+        verify(workitemService).assign(99L, "AGENT", 12L, null, null, null, 100L, 7L, 77L);
+        verify(workitemService, never()).assign(anyLong(), anyString(), any(), any(), any(), any(), anyLong(), anyLong());
+    }
+
     @Test
     void assignWorkitemParsesScheduledStartAtIsoInstant() {
         WorkitemVO assigned = new WorkitemVO();

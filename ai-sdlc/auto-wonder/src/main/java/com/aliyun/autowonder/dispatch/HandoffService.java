@@ -194,7 +194,7 @@ public class HandoffService {
      * @param tenantId 工作空间 ID
      * @param workitemId 工单 ID
      * @param dispatchId 来源派发 ID
-     * @param to 交接目标；能解析成用户 ID 时按该用户，否则按上面的顺序兜底
+     * @param to 交接目标；能解析成用户 ID 则按该用户，否则按创建者和指派操作人兜底
      * @param w 已锁定的工单
      * @param fallbackReason 交接原因码
      * @param allowTenantOwnerFallback 创建者不可用或没有其他真人时，是否允许落到工作空间所有者

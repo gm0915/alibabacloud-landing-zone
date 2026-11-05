@@ -2926,6 +2926,48 @@ class WorkitemServiceTest {
         verify(workitemDao).updateAssignOperator(eq(500L), eq(100L), eq(42L), anyInt(), eq(42L));
     }
 
+    /**
+     * 指派时传入交接人后，指派操作人改成该用户，不写成当前操作人.
+     */
+    @Test
+    void assignWithAssignOperatorStoresThatUser() {
+        WorkspaceMemberDao members = mock(WorkspaceMemberDao.class);
+        ReflectionTestUtils.setField(service, "workspaceMemberDao", members);
+        UserDO handoffUser = new UserDO();
+        handoffUser.setId(77L);
+        handoffUser.setStatus(0);
+        when(userDao.findById(77L)).thenReturn(handoffUser);
+        WorkspaceMemberDO member = new WorkspaceMemberDO();
+        member.setStatus(0);
+        member.setIsDeleted(0);
+        when(members.findByWorkspaceAndUser(100L, 77L)).thenReturn(member);
+        when(workitemDao.findById(500L)).thenReturn(assignableWorkitem());
+        when(workitemDao.updateAssignee(anyLong(), anyLong(), anyString(), any(), anyInt(), anyLong())).thenReturn(1);
+        when(workitemDao.updateAssignOperator(anyLong(), anyLong(), any(), anyInt(), anyLong())).thenReturn(1);
+
+        service.assign(500L, "AGENT", 10002L, 30003L, null, null, 100L, 42L, 77L);
+
+        verify(workitemDao).updateAssignOperator(eq(500L), eq(100L), eq(77L), anyInt(), eq(42L));
+        verify(workitemDao, never()).updateAssignOperator(eq(500L), eq(100L), eq(42L), anyInt(), eq(42L));
+    }
+
+    /**
+     * 交接人不是本空间在职成员时拒绝指派，不改处理人.
+     */
+    @Test
+    void assignRejectsAssignOperatorWhoIsNotActiveMember() {
+        WorkspaceMemberDao members = mock(WorkspaceMemberDao.class);
+        ReflectionTestUtils.setField(service, "workspaceMemberDao", members);
+        when(workitemDao.findById(500L)).thenReturn(assignableWorkitem());
+        when(userDao.findById(77L)).thenReturn(null);
+
+        assertThatThrownBy(() -> service.assign(500L, "AGENT", 10002L, 30003L, null, null, 100L, 42L, 77L))
+                .isInstanceOf(BizException.class);
+
+        verify(workitemDao, never()).updateAssignee(anyLong(), anyLong(), anyString(), any(), anyInt(), anyLong());
+        verify(workitemDao, never()).updateAssignOperator(anyLong(), anyLong(), any(), anyInt(), anyLong());
+    }
+
     @Test
     void systemAssignDoesNotSetAssignOperator() {
         when(workitemDao.findById(500L)).thenReturn(assignableWorkitem());

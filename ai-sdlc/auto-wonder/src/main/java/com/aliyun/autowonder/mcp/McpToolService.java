@@ -895,7 +895,12 @@ public class McpToolService {
                                 prop("scheduledStartAt", "string", "Optional. Planned agent delivery start time as an "
                                         + "ISO-8601 instant (for example 2026-08-27T10:00:00Z); only meaningful when "
                                         + "assigneeType=AGENT. Do not fill this parameter unless the user explicitly "
-                                        + "requests scheduled execution; omit it to dispatch immediately."))),
+                                        + "requests scheduled execution; omit it to dispatch immediately."),
+                                prop("assignOperatorId", "integer", "Optional. Active workspace user id recorded as the "
+                                        + "handoff person. When set, that user replaces the current assign operator. "
+                                        + "Human handoff still returns an active creator first; this person is used "
+                                        + "only when the work item has no creator. "
+                                        + "Omit it to keep the current handoff person and the current return order."))),
                 tool(ADD_WORKITEM_COMMENT, "Add a comment to an AutoWonder workitem. "
                                 + "Before posting a conclusion with external artifacts, call expose_workitem_artifact "
                                 + "for each vetted file and include all returned artifactUrl links at the end of this "
@@ -2242,18 +2247,33 @@ public class McpToolService {
             case ASSIGN_WORKITEM -> {
                 long workitemId = requiredLong(safeArgs, "id");
                 Date scheduledStartAt = isoInstantArgument(safeArgs, "scheduledStartAt");
+                Long assignOperatorId = lng(safeArgs, "assignOperatorId");
                 if (isDispatchCredential(context)) {
                     DispatchDO dispatch = requireDispatchScope(context, workitemId);
+                    AssignmentActor actor = resolveAgentActor(dispatch.getAgentId(), context.workspaceId());
+                    if (assignOperatorId == null) {
+                        yield workitemService.assignAs(workitemId, requiredString(safeArgs, "assigneeType"),
+                                lng(safeArgs, "assigneeRef"), lng(safeArgs, "sdlcId"), lng(safeArgs, "squadId"),
+                                scheduledStartAt,
+                                context.workspaceId(), context.userId(),
+                                actor);
+                    }
                     yield workitemService.assignAs(workitemId, requiredString(safeArgs, "assigneeType"),
                             lng(safeArgs, "assigneeRef"), lng(safeArgs, "sdlcId"), lng(safeArgs, "squadId"),
-                            scheduledStartAt,
+                            scheduledStartAt, null,
                             context.workspaceId(), context.userId(),
-                            resolveAgentActor(dispatch.getAgentId(), context.workspaceId()));
+                            actor, assignOperatorId);
+                }
+                if (assignOperatorId == null) {
+                    yield workitemService.assign(workitemId, requiredString(safeArgs, "assigneeType"),
+                            lng(safeArgs, "assigneeRef"), lng(safeArgs, "sdlcId"), lng(safeArgs, "squadId"),
+                            scheduledStartAt,
+                            context.workspaceId(), context.userId());
                 }
                 yield workitemService.assign(workitemId, requiredString(safeArgs, "assigneeType"),
                         lng(safeArgs, "assigneeRef"), lng(safeArgs, "sdlcId"), lng(safeArgs, "squadId"),
                         scheduledStartAt,
-                        context.workspaceId(), context.userId());
+                        context.workspaceId(), context.userId(), assignOperatorId);
             }
             case ADD_WORKITEM_COMMENT -> {
                 AddCommentRequest req = toBean(safeArgs, AddCommentRequest.class);

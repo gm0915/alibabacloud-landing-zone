@@ -364,6 +364,62 @@ public class WorkitemService {
         }
     }
 
+    /**
+     * 确认交接人是本工作空间的在职成员.
+     *
+     * @param workspaceId 工作空间 ID
+     * @param assignOperatorId 交接人用户 ID
+     * @throws BizException 用户 ID 不是正整数，或用户账号、成员关系不在职时抛出
+     */
+    private void requireActiveAssignOperator(long workspaceId, Long assignOperatorId) {
+        final long minimumUserId = 1L;
+        if (assignOperatorId == null || assignOperatorId.longValue() < minimumUserId) {
+            throw BizException.keyed(ErrorCode.PARAM_INVALID, "workitem.assign_operator_id_invalid", null,
+                    "交接人必须是正整数");
+        }
+        final int activeStatus = 0;
+        final int memberNotDeleted = 0;
+        UserDO user = userDao == null ? null : userDao.findById(assignOperatorId);
+        WorkspaceMemberDO member = workspaceMemberDao == null
+                ? null
+                : workspaceMemberDao.findByWorkspaceAndUser(workspaceId, assignOperatorId);
+        boolean activeMember = user != null
+                && Integer.valueOf(activeStatus).equals(user.getStatus())
+                && member != null
+                && Integer.valueOf(activeStatus).equals(member.getStatus())
+                && Integer.valueOf(memberNotDeleted).equals(member.getIsDeleted());
+        if (!activeMember) {
+            throw BizException.keyed(ErrorCode.WORKSPACE_NOT_MEMBER, "workitem.assign_operator_not_member", null,
+                    "指定的交接人不是该工作空间的有效成员");
+        }
+    }
+
+    /**
+     * 把指派操作人改成指定交接人.
+     * 已经是该用户时不写库。
+     *
+     * @param current 当前工单，版本用于乐观锁
+     * @param tenantId 工作空间 ID
+     * @param assignOperatorId 交接人用户 ID
+     * @param modifierUserId 操作人用户 ID
+     * @return 写库后的工单；未写库时返回 current
+     * @throws BizException 版本冲突时抛出
+     */
+    private WorkitemDO storeAssignOperator(WorkitemDO current, long tenantId, long assignOperatorId,
+                                            long modifierUserId) {
+        Long operator = Long.valueOf(assignOperatorId);
+        if (Objects.equals(current.getAssignOperatorId(), operator)) {
+            return current;
+        }
+        int rows = workitemDao.updateAssignOperator(current.getId(), tenantId, operator,
+                current.getVersion(), modifierUserId);
+        if (rows == 0) {
+            throw new BizException(ErrorCode.WORKITEM_VERSION_CONFLICT);
+        }
+        WorkitemDO stored = workitemDao.findById(current.getId());
+        return stored == null ? current : stored;
+    }
+
     public WorkitemVO get(long id) {
         WorkitemDO w = workitemDao.findById(id);
         if (w == null) {
@@ -889,26 +945,90 @@ public class WorkitemService {
     public WorkitemVO assign(long id, String assigneeType, Long assigneeRef, Long sdlcId, Long squadId,
                              Date scheduledStartAt, String restartToken, long tenantId, long userId) {
         return assignAs(id, assigneeType, assigneeRef, sdlcId, squadId, scheduledStartAt, restartToken,
-                tenantId, userId, resolveHumanActor(userId));
+                tenantId, userId, resolveHumanActor(userId), null);
+    }
+
+    /**
+     * 指派工单，并在传入交接人时把指派操作人改成该用户.
+     * 交接人为空时与不带该参数的指派相同。交回顺序不变，在职创建者仍然优先。
+     *
+     * @param id 工单 ID
+     * @param assigneeType 处理人类型
+     * @param assigneeRef 处理人 ID
+     * @param sdlcId 流程 ID；为空时按原规则解析
+     * @param squadId 小队 ID
+     * @param scheduledStartAt 计划开始时间
+     * @param tenantId 工作空间 ID
+     * @param userId 操作人用户 ID
+     * @param assignOperatorId 交接人；为空则不改指派操作人
+     * @return 更新后的工单
+     * @throws BizException 交接人不是正整数或不是本空间在职成员、工单不存在或版本冲突时抛出
+     */
+    @Transactional
+    public WorkitemVO assign(long id, String assigneeType, Long assigneeRef, Long sdlcId, Long squadId,
+                             Date scheduledStartAt, long tenantId, long userId, Long assignOperatorId) {
+        return assignAs(id, assigneeType, assigneeRef, sdlcId, squadId, scheduledStartAt, null,
+                tenantId, userId, resolveHumanActor(userId), assignOperatorId);
     }
 
     @Transactional
     public WorkitemVO assignAs(long id, String assigneeType, Long assigneeRef, Long sdlcId, Long squadId,
                                long tenantId, long modifierUserId, AssignmentActor actor) {
-        return assignAs(id, assigneeType, assigneeRef, sdlcId, squadId, null, null, tenantId, modifierUserId, actor);
+        return assignAs(id, assigneeType, assigneeRef, sdlcId, squadId, null, null, tenantId, modifierUserId, actor, null);
     }
 
     @Transactional
     public WorkitemVO assignAs(long id, String assigneeType, Long assigneeRef, Long sdlcId, Long squadId,
                                Date scheduledStartAt, long tenantId, long modifierUserId, AssignmentActor actor) {
         return assignAs(id, assigneeType, assigneeRef, sdlcId, squadId, scheduledStartAt, null,
-                tenantId, modifierUserId, actor);
+                tenantId, modifierUserId, actor, null);
     }
 
+    /**
+     * 按已有重启令牌指派，不改交回用户.
+     *
+     * @param id 工单 ID
+     * @param assigneeType 处理人类型
+     * @param assigneeRef 处理人 ID
+     * @param sdlcId 流程 ID
+     * @param squadId 小队 ID
+     * @param scheduledStartAt 计划开始时间
+     * @param restartToken 重启令牌
+     * @param tenantId 工作空间 ID
+     * @param modifierUserId 操作人用户 ID
+     * @param actor 指派操作者
+     * @return 更新后的工单
+     * @throws BizException 工单不存在或版本冲突时抛出
+     */
     @Transactional
     public WorkitemVO assignAs(long id, String assigneeType, Long assigneeRef, Long sdlcId, Long squadId,
                                Date scheduledStartAt, String restartToken,
                                long tenantId, long modifierUserId, AssignmentActor actor) {
+        return assignAs(id, assigneeType, assigneeRef, sdlcId, squadId, scheduledStartAt, restartToken,
+                tenantId, modifierUserId, actor, null);
+    }
+
+    /**
+     * 执行指派，并在传入交接人时把指派操作人改成该用户.
+     *
+     * @param id 工单 ID
+     * @param assigneeType 处理人类型
+     * @param assigneeRef 处理人 ID
+     * @param sdlcId 流程 ID
+     * @param squadId 小队 ID
+     * @param scheduledStartAt 计划开始时间
+     * @param restartToken 重启令牌
+     * @param tenantId 工作空间 ID
+     * @param modifierUserId 操作人用户 ID
+     * @param actor 指派操作者
+     * @param assignOperatorId 交接人；为空则不改指派操作人
+     * @return 更新后的工单
+     * @throws BizException 交接人不是正整数或不是本空间在职成员、工单不存在或版本冲突时抛出
+     */
+    @Transactional
+    public WorkitemVO assignAs(long id, String assigneeType, Long assigneeRef, Long sdlcId, Long squadId,
+                               Date scheduledStartAt, String restartToken,
+                               long tenantId, long modifierUserId, AssignmentActor actor, Long assignOperatorId) {
         WorkitemDO w = workitemDao.findById(id);
         if (w == null || !Long.valueOf(tenantId).equals(w.getTenantId())) {
             throw new BizException(ErrorCode.WORKITEM_NOT_FOUND);
@@ -917,6 +1037,9 @@ public class WorkitemService {
         // a database error from the restart-round insert.
         if (restartToken != null && restartToken.length() > 64) {
             throw BizException.keyed(ErrorCode.PARAM_INVALID, "workitem.restart_token_limit", new Object[]{64}, "restartToken 长度不能超过 64 个字符");
+        }
+        if (assignOperatorId != null) {
+            requireActiveAssignOperator(tenantId, assignOperatorId);
         }
         boolean sameAssignee = Objects.equals(w.getAssigneeType(), assigneeType)
                 && Objects.equals(w.getAssigneeRef(), assigneeRef);
@@ -927,6 +1050,9 @@ public class WorkitemService {
         // assignment path — there is no old execution to stop.
         boolean restartDelivery = agentAssign && w.getSdlcId() != null && w.getCurrentStepId() != null;
         if (sameAssignee && !restartDelivery && scheduledStartAt == null) {
+            if (assignOperatorId != null) {
+                w = storeAssignOperator(w, tenantId, assignOperatorId, modifierUserId);
+            }
             return toVO(w);
         }
         AssignmentActor effectiveActor = actor == null
@@ -968,13 +1094,17 @@ public class WorkitemService {
             // Record the real human who triggered the assignment (assign-operator) so a later
             // handoff with no resolvable next-hop can fall back to them. SYSTEM-initiated assigns
             // (agent->agent handoffs) must not overwrite the human operator.
-            if (effectiveActor.isHuman() && modifierUserId != SYSTEM_USER_ID && reloaded != null
+            if (assignOperatorId == null && effectiveActor.isHuman() && modifierUserId != SYSTEM_USER_ID
+                    && reloaded != null
                     && !java.util.Objects.equals(reloaded.getAssignOperatorId(), modifierUserId)) {
                 workitemDao.updateAssignOperator(id, tenantId, modifierUserId, reloaded.getVersion(), modifierUserId);
                 // updateAssignOperator bumps the version when it matches; reload so the
                 // scheduled-start CAS below does not fail against the stale version.
                 reloaded = workitemDao.findById(id);
             }
+        }
+        if (assignOperatorId != null && reloaded != null) {
+            reloaded = storeAssignOperator(reloaded, tenantId, assignOperatorId, modifierUserId);
         }
 
         if (scheduledStartAt != null && "AGENT".equals(assigneeType) && assigneeRef != null && reloaded != null) {
