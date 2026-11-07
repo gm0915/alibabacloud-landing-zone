@@ -1089,7 +1089,7 @@
     "attachmentLoadFailed": "附件加载失败，请重试",
     "attachmentDownloadFailed": "附件下载失败，请重试",
     "attachmentDeleteFailed": "附件删除失败，请重试",
-    "bootstrapPrompt": "请通过平台 MCP 读取工单 #{{workitemId}}，与我进行需求澄清，需求确认后启动交付。",
+    "bootstrapPrompt": "请通过平台 MCP 读取工单 #{{workitemId}}，与我进行需求澄清。先整理方案并等我确认，确认后再单独询问是否启动以及何时启动。",
     "conversationNumber": "会话 #{{id}}",
     "lastActive": "最近 {{date}}",
     "createdAt": "创建 {{date}}",

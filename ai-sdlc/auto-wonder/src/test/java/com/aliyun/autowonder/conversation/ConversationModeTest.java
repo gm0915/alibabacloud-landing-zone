@@ -31,7 +31,10 @@ class ConversationModeTest {
             "\n\n当前是工单需求澄清会话。本会话只做澄清和资料整理，不改仓库、不写代码、不创建分支、不提交测试。"
                     + "身份配置里的开发步骤不在本会话执行。"
                     + "交付计划只写确认后上传材料并交给开发，不把阅读编码规范、拉仓、建分支、提测写成自己的下一步。"
-                    + "用户明确确认最终方案后上传产物，接着启动交付并把工单派给开发。"
+                    + "澄清题的回答只确定范围，不是对最终方案的确认，也不是启动交付的授权。"
+                    + "题目答完后，先把整理后的方案发给用户，停下来等用户明确确认这份方案。未确认前不上传产物、不指派、不启动交付。"
+                    + "用户明确确认方案后，再上传产物。上传完成后，单独询问是否启动以及何时启动：立刻启动、在用户给出的时间启动，或不启动。"
+                    + "只有用户选定启动后，才调用一次 assign_workitem 把工单派给开发。用户指定未来时间时，在这一次调用里传入 scheduledStartAt，不要先指派再补一次定时。用户选择不启动时不要指派。"
                     + "用户要求重写时，先清理本次澄清上传的旧产物，再上传新版。";
 
     private static final String IDENTITY = "IDENTITY";
@@ -87,6 +90,19 @@ class ConversationModeTest {
                 .isEqualTo(CLARIFICATION_SUFFIX)
                 .contains("不改仓库、不写代码")
                 .doesNotContain("遵循身份配置");
+    }
+
+    /**
+     * 澄清题答完后必须先确认方案，再单独决定是否启动；计划时间只能写在同一次指派上.
+     */
+    @Test
+    void clarificationPromptSeparatesPlanConfirmationFromDeliveryStart() {
+        assertThat(ConversationMode.WORKITEM_CLARIFICATION.promptSuffix())
+                .contains("不是对最终方案的确认")
+                .contains("未确认前不上传产物、不指派、不启动交付")
+                .contains("单独询问是否启动以及何时启动")
+                .contains("scheduledStartAt")
+                .doesNotContain("接着启动交付");
     }
 
     @Test

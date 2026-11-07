@@ -1108,7 +1108,7 @@
     "attachmentLoadFailed": "Could not load the attachment. Please try again.",
     "attachmentDownloadFailed": "Could not download the attachment. Please try again.",
     "attachmentDeleteFailed": "Could not delete the attachment. Please try again.",
-    "bootstrapPrompt": "Please read work item #{{workitemId}} using the platform MCP and clarify the requirements with me.",
+    "bootstrapPrompt": "Please read work item #{{workitemId}} using the platform MCP and clarify the requirements with me. Present the plan and wait for my confirmation, then ask separately whether to start delivery and when.",
     "conversationNumber": "Conversation #{{id}}",
     "lastActive": "Last active {{date}}",
     "createdAt": "Created {{date}}",
