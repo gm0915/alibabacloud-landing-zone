@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Arrays;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -13,8 +14,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 渠道模式的映射与提示词拼接。
  *
- * <p>这批断言的主要目的不是描述新行为，而是钉住重构前的行为：原来 resolveIdentity 里
- * 两段独立的 if 被抽成枚举后，除平台管家渠道外任何渠道的拼接结果都不允许变化。
+ * <p>除平台管家和工单需求澄清外，其余渠道的拼接结果保持重构前。需求澄清的后缀单独钉住：
+ * 本会话不执行身份里的开发步骤。
  */
 class ConversationModeTest {
 
@@ -25,8 +26,12 @@ class ConversationModeTest {
     /** 与重构前 AgentConversationService 里的常量逐字一致。 */
     private static final String API_MODE_SUFFIX =
             "\n\n重要:你在API模式下运行,不能使用AskUserQuestion等交互工具。直接用文字提问和回复。";
-    private static final String LEGACY_CLARIFICATION_SUFFIX =
-            "\n\n当前是工单需求澄清会话。遵循身份配置完成澄清；仅在用户明确确认最终方案后上传产物。"
+    /** 澄清渠道追加在身份之后，覆盖身份里的开发步骤。 */
+    private static final String CLARIFICATION_SUFFIX =
+            "\n\n当前是工单需求澄清会话。本会话只做澄清和资料整理，不改仓库、不写代码、不创建分支、不提交测试。"
+                    + "身份配置里的开发步骤不在本会话执行。"
+                    + "交付计划只写确认后上传材料并交给开发，不把阅读编码规范、拉仓、建分支、提测写成自己的下一步。"
+                    + "用户明确确认最终方案后上传产物，接着启动交付并把工单派给开发。"
                     + "用户要求重写时，先清理本次澄清上传的旧产物，再上传新版。";
 
     private static final String IDENTITY = "IDENTITY";
@@ -73,9 +78,15 @@ class ConversationModeTest {
         assertFalse(ConversationMode.GENERIC.oneWay());
     }
 
+    /**
+     * 澄清会话不沿用身份里的开发步骤，交付计划不能写成自己拉仓、建分支和提测.
+     */
     @Test
-    void clarificationKeepsThePromptItHadBeforeTheEnumExtraction() {
-        assertEquals(LEGACY_CLARIFICATION_SUFFIX, ConversationMode.WORKITEM_CLARIFICATION.promptSuffix());
+    void clarificationPromptForbidsDevelopmentInThisSession() {
+        assertThat(ConversationMode.WORKITEM_CLARIFICATION.promptSuffix())
+                .isEqualTo(CLARIFICATION_SUFFIX)
+                .contains("不改仓库、不写代码")
+                .doesNotContain("遵循身份配置");
     }
 
     @Test
@@ -127,14 +138,14 @@ class ConversationModeTest {
         assertTrue(suffix.contains("不做通用艺术文生图"));
     }
 
-    /** 复刻重构前 resolveIdentity 的两段 if，作为不变的行为基线。 */
+    /** API 模式仍按重构前拼接；澄清后缀用当前边界。 */
     private static String legacyCompose(String channel, boolean acpSupported) {
         StringBuilder sb = new StringBuilder(IDENTITY);
         if (INTERNAL_CHANNEL.equals(channel) || !acpSupported) {
             sb.append(API_MODE_SUFFIX);
         }
         if (CLARIFICATION_CHANNEL.equals(channel)) {
-            sb.append(LEGACY_CLARIFICATION_SUFFIX);
+            sb.append(CLARIFICATION_SUFFIX);
         }
         return sb.toString();
     }
