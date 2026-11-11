@@ -1033,8 +1033,8 @@ public class McpToolService {
                                         + "requests scheduled execution; omit it to dispatch immediately."),
                                 prop("assignOperatorId", "integer", "Optional. Active workspace user id recorded as the "
                                         + "handoff person. When set, that user replaces the current assign operator. "
-                                        + "Human handoff still returns an active creator first; this person is used "
-                                        + "only when the work item has no creator. "
+                                        + "Human handoff uses this active assign operator first, then the active creator, "
+                                        + "then the workspace owner. "
                                         + "Omit it to keep the current handoff person and the current return order."))),
                 tool(ADD_WORKITEM_COMMENT, "Add a comment to an AutoWonder workitem. "
                                 + "Before posting a conclusion with external artifacts, call expose_workitem_artifact "

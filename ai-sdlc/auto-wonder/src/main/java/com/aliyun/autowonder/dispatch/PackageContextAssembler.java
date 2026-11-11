@@ -480,7 +480,12 @@ public class PackageContextAssembler {
 
     /**
      * 组装执行端选择交接目标的名册：当前数字员工所在小队的其他数字员工，以及工作空间里的在职真人。
-     * 数字员工角色取在线版本。工单创建者标为需求决策人，供状态流转后的真人交接使用；指派操作人只保留操作关系。
+     * 数字员工角色取在线版本。需求决策人先给在职指派操作人；操作人不在名册里时再给工单创建者。
+     *
+     * @param tenantId 工作空间 ID
+     * @param selfAgentId 当前数字员工 ID
+     * @param w 工单；为空或不是本空间时不列真人
+     * @return 含 digitalTeammates 与 humanTeammates 的名册
      */
     private Map<String, Object> buildRoster(long tenantId, long selfAgentId, WorkitemDO w) {
         Map<String, Object> roster = new LinkedHashMap<>();
@@ -531,17 +536,25 @@ public class PackageContextAssembler {
                 human.put("userId", user.getId());
                 human.put("name", user.getNickname() != null && !user.getNickname().isBlank()
                         ? user.getNickname() : user.getUsername());
-                if (Objects.equals(user.getId(), w.getCreatorId())) {
-                    human.put("relation", workitemCreatorRelation);
-                    human.put("role", decisionHumanRole);
-                } else if (user.getId().equals(w.getAssignOperatorId())) {
+                if (Objects.equals(user.getId(), w.getAssignOperatorId())) {
                     human.put("relation", "指派操作人");
+                    human.put("role", decisionHumanRole);
+                } else if (Objects.equals(user.getId(), w.getCreatorId())) {
+                    human.put("relation", workitemCreatorRelation);
                 } else if ("HUMAN".equalsIgnoreCase(w.getAssigneeType()) && user.getId().equals(w.getAssigneeRef())) {
                     human.put("relation", "assignee");
                 } else {
                     human.put("relation", "空间成员");
                 }
                 humans.add(human);
+            }
+            if (humans.stream().noneMatch(human -> decisionHumanRole.equals(human.get("role")))) {
+                for (Map<String, Object> human : humans) {
+                    if (Objects.equals(w.getCreatorId(), human.get("userId"))) {
+                        human.put("role", decisionHumanRole);
+                        break;
+                    }
+                }
             }
         }
         roster.put("humanTeammates", humans);

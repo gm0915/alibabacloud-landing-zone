@@ -403,23 +403,43 @@ class HandoffServiceTest {
     }
 
     /**
-     * 状态流转交接真人时，目标不是用户 ID，指派给工单创建者，不指派给工作空间所有者。
+     * 目标不是用户 ID 时，在职指派操作人优先于创建者和空间所有者。
      */
     @Test
-    void unresolvedHumanTargetAssignsWorkitemCreatorInsteadOfWorkspaceOwner() {
+    void unresolvedHumanTargetAssignsActiveOperatorBeforeCreator() {
         WorkitemDao workitemDao = mock(WorkitemDao.class);
         WorkitemEventDao eventDao = mock(WorkitemEventDao.class);
         WorkitemDO workitem = workitem(500L, 100L, 3);
         workitem.setCreatorId(9L);
-        workitem.setAssignOperatorId(7L);
+        workitem.setAssignOperatorId(42L);
         when(workitemDao.findByIdForUpdate(500L, 100L)).thenReturn(workitem);
-        WorkspaceDO workspace = new WorkspaceDO();
-        workspace.setId(100L);
-        workspace.setOwnerId(7L);
-        when(workspaceDao.findById(100L)).thenReturn(workspace);
-        when(workitemDao.updateAssignee(500L, 100L, "HUMAN", 9L, 3, 0L)).thenReturn(1);
+        when(workitemDao.updateAssignee(500L, 100L, "HUMAN", 42L, 3, 0L)).thenReturn(1);
         HandoffService service = new HandoffService(workitemDao, mock(DispatchService.class),
                 mock(AgentRoleResolver.class), mock(AgentSdlcResolver.class), workspaceDao, workspaceMemberDao, userDao, eventDao);
+
+        HandoffResult result = service.handle(100L, 500L, 300L, "需求决策人", "HUMAN");
+
+        assertThat(result.status()).isEqualTo(HandoffResult.Status.HUMAN_ASSIGNED);
+        assertThat(result.targetRef()).isEqualTo(42L);
+        verify(workitemDao).updateAssignee(500L, 100L, "HUMAN", 42L, 3, 0L);
+        verify(workspaceDao, never()).findById(anyLong());
+    }
+
+    /**
+     * 指派操作人已不在职、创建者仍在职时，真人交接给创建者。
+     */
+    @Test
+    void inactiveOperatorAssignsActiveCreator() {
+        WorkitemDao workitemDao = mock(WorkitemDao.class);
+        WorkitemDO workitem = workitem(500L, 100L, 3);
+        workitem.setCreatorId(9L);
+        workitem.setAssignOperatorId(42L);
+        when(workitemDao.findByIdForUpdate(500L, 100L)).thenReturn(workitem);
+        userDao.findById(42L).setStatus(1);
+        when(workitemDao.updateAssignee(500L, 100L, "HUMAN", 9L, 3, 0L)).thenReturn(1);
+        HandoffService service = new HandoffService(workitemDao, mock(DispatchService.class),
+                mock(AgentRoleResolver.class), mock(AgentSdlcResolver.class), workspaceDao,
+                workspaceMemberDao, userDao, mock(WorkitemEventDao.class));
 
         HandoffResult result = service.handle(100L, 500L, 300L, "需求决策人", "HUMAN");
 
@@ -430,15 +450,16 @@ class HandoffServiceTest {
     }
 
     /**
-     * 工单创建者已不是在职成员时，真人交接退回工作空间所有者。
+     * 指派操作人和创建者都不在职时，真人交接退回工作空间所有者。
      */
     @Test
-    void inactiveCreatorFallsBackToWorkspaceOwner() {
+    void inactiveOperatorAndCreatorFallBackToWorkspaceOwner() {
         WorkitemDao workitemDao = mock(WorkitemDao.class);
         WorkitemDO workitem = workitem(500L, 100L, 3);
         workitem.setCreatorId(9L);
         workitem.setAssignOperatorId(42L);
         when(workitemDao.findByIdForUpdate(500L, 100L)).thenReturn(workitem);
+        userDao.findById(42L).setStatus(1);
         userDao.findById(9L).setStatus(1);
         WorkspaceDO workspace = new WorkspaceDO();
         workspace.setId(100L);
