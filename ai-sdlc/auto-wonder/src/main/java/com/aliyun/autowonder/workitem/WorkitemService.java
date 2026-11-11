@@ -1159,8 +1159,9 @@ public class WorkitemService {
 
             // Record the real human who triggered the assignment (assign-operator) so a later
             // handoff with no resolvable next-hop can fall back to them. SYSTEM-initiated assigns
-            // (agent->agent handoffs) must not overwrite the human operator.
-            if (!sameAssignee && effectiveActor.isHuman() && modifierUserId != SYSTEM_USER_ID && reloaded != null
+            // (agent->agent handoffs) must not overwrite the human operator. An explicit handoff
+            // user is stored below and must not be preceded by a write of the current user.
+            if (assignOperatorId == null && !sameAssignee && effectiveActor.isHuman() && modifierUserId != SYSTEM_USER_ID && reloaded != null
                     && !java.util.Objects.equals(reloaded.getAssignOperatorId(), modifierUserId)) {
                 workitemDao.updateAssignOperator(id, tenantId, modifierUserId, reloaded.getVersion(), modifierUserId);
                 // updateAssignOperator bumps the version when it matches; reload so the
