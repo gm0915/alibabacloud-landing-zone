@@ -9,6 +9,8 @@ import com.aliyun.autowonder.clarification.ClarificationDao;
 import com.aliyun.autowonder.guidance.GuidanceDO;
 import com.aliyun.autowonder.guidance.GuidanceDao;
 import com.aliyun.autowonder.sdlc.SdlcStepDO;
+import com.aliyun.autowonder.common.error.BizException;
+import com.aliyun.autowonder.common.error.ErrorCode;
 import com.aliyun.autowonder.sdlc.SdlcStepDao;
 import com.aliyun.autowonder.squad.SquadMemberDO;
 import com.aliyun.autowonder.squad.SquadMemberDao;
@@ -389,6 +391,33 @@ class PackageContextAssemblerTest {
         d.setAgentId(400L);
         d.setAgentVersionId(401L);
         return d;
+    }
+
+    @Test
+    void interactionManifestAndWorkflowDescribeTheTargetStepWithoutRebindingTheWorkitem() {
+        WorkitemDO workitem = new WorkitemDO();
+        workitem.setId(200L);
+        workitem.setTenantId(TENANT);
+        workitem.setSdlcId(15L);
+        when(workitemDao.findById(200L)).thenReturn(workitem);
+        DispatchDO interaction = dispatch();
+        interaction.setResumeMode("CANONICAL_INTERACTION");
+        SdlcStepDO entry = workflowStep(300L, 56L, 1, "new entry", "analysis", "", null, null);
+        when(stepDao.findById(300L)).thenReturn(entry);
+        when(stepDao.listBySdlc(56L)).thenReturn(List.of(entry));
+
+        PackageContext ctx = assembler.assemble(interaction, version());
+        assertEquals(56L, ctx.getSdlcId());
+        assertEquals("56", ctx.getSdlc().get("sdlcId"));
+        assertEquals(15L, workitem.getSdlcId());
+
+        entry.setTenantId(TENANT + 1);
+        assertEquals(ErrorCode.SDLC_STEP_NOT_FOUND.getCode(),
+                assertThrows(BizException.class, () -> assembler.assemble(interaction, version())).getCode());
+        interaction.setSdlcStepId(null);
+        ctx = assembler.assemble(interaction, version());
+        assertNull(ctx.getSdlcId());
+        assertEquals("interaction-only", ctx.getSdlc().get("workflow"));
     }
 
     private WorkitemCommentDO comment(long id, String content, String authorType, long authorRef) {
@@ -1314,11 +1343,11 @@ class PackageContextAssemblerTest {
     }
 
     /**
-     * 当前处理人是数字员工时，名册仍列出指派操作人，并把工单创建者标为需求决策人。
+     * 当前处理人是数字员工时，名册把在职指派操作人标为需求决策人，创建者只保留创建者关系。
      */
     @SuppressWarnings("unchecked")
     @Test
-    void rosterMarksWorkitemCreatorAsDecisionHumanWhenAssigneeIsAgent() {
+    void rosterMarksAssignOperatorAsDecisionHumanWhenAssigneeIsAgent() {
         WorkitemDO w = new WorkitemDO();
         w.setId(200L);
         w.setTenantId(TENANT);
@@ -1345,14 +1374,48 @@ class PackageContextAssemblerTest {
         assertThat(humans).anySatisfy(human -> {
             assertThat(human.get("userId")).isEqualTo(9L);
             assertThat(human.get("relation")).isEqualTo("工单创建者");
-            assertThat(human.get("role")).isEqualTo("需求决策人");
+            assertThat(human.get("role")).isNull();
             assertThat(human.get("name")).isEqualTo("Creator");
         });
         assertThat(humans).anySatisfy(human -> {
             assertThat(human.get("userId")).isEqualTo(42L);
             assertThat(human.get("relation")).isEqualTo("指派操作人");
-            assertThat(human.get("role")).isNull();
+            assertThat(human.get("role")).isEqualTo("需求决策人");
             assertThat(human.get("name")).isEqualTo("Zhang");
+        });
+    }
+
+    /**
+     * 指派操作人不在名册里时，需求决策人改标工单创建者。
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    void rosterMarksCreatorAsDecisionHumanWhenAssignOperatorIsAbsent() {
+        WorkitemDO w = new WorkitemDO();
+        w.setId(200L);
+        w.setTenantId(TENANT);
+        w.setTitle("t");
+        w.setContentMd("c");
+        w.setAssigneeType("AGENT");
+        w.setAssigneeRef(10002L);
+        w.setCreatorId(9L);
+        w.setAssignOperatorId(42L);
+        when(workitemDao.findById(200L)).thenReturn(w);
+        stubEmptyExceptRoster();
+        when(squadMemberDao.listByAgent(400L)).thenReturn(List.of());
+
+        UserDO creator = new UserDO();
+        creator.setId(9L);
+        creator.setNickname("Creator");
+        stubHumanMembers(creator);
+
+        PackageContext ctx = assembler.assemble(dispatch(), version());
+        Map<String, Object> roster = ctx.getRoster();
+        List<Map<String, Object>> humans = (List<Map<String, Object>>) roster.get("humanTeammates");
+        assertThat(humans).singleElement().satisfies(human -> {
+            assertThat(human.get("userId")).isEqualTo(9L);
+            assertThat(human.get("relation")).isEqualTo("工单创建者");
+            assertThat(human.get("role")).isEqualTo("需求决策人");
         });
     }
 
