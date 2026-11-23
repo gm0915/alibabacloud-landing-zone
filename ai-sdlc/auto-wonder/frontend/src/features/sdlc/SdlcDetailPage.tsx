@@ -167,6 +167,7 @@ export function SdlcDetailPage() {
       if (!policy || typeof policy !== 'object' || Array.isArray(policy)) policy = {};
       stepForm.setFieldsValue({
         name: step.name,
+        code: step.code || undefined,
         kind: step.kind || undefined,
         instructionMd: step.instructionMd || undefined,
         checklistJson: step.checklistJson || undefined,
@@ -225,6 +226,7 @@ export function SdlcDetailPage() {
   const stepColumns: ColumnsType<SdlcStep> = [
     { title: '#', width: 50, render: (_, __, idx) => idx + 1 },
     { title: t('fields.stepName'), dataIndex: 'name', align: 'left', width: 140 },
+    { title: t('fields.stepCode'), dataIndex: 'code', width: 140, render: (v: string | null) => v || '-' },
     { title: t('fields.kind'), dataIndex: 'kind', width: 110, render: (v: string | null) => {
       const option = kindOptions.find(option => option.value === v);
       return v ? <Tag>{option ? t(option.key) : v}</Tag> : '-';
@@ -489,6 +491,9 @@ export function SdlcDetailPage() {
         <Form name="sdlc-step" form={stepForm} layout="vertical">
           <Form.Item name="name" label={t('fields.stepName')} rules={[{ required: true, message: t('validation.stepName') }]}>
             <Input placeholder={t('placeholder.stepName')} />
+          </Form.Item>
+          <Form.Item name="code" label={t('fields.stepCode')}>
+            <Input maxLength={64} placeholder={t('placeholder.stepCode')} />
           </Form.Item>
           <Form.Item name="kind" label={t('fields.stepKind')}>
             <Select allowClear options={kindOptions.map(option => ({ ...option, label: t(option.key) }))} placeholder={t('placeholder.kind')} />

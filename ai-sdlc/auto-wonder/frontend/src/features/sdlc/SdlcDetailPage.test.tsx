@@ -319,6 +319,7 @@ describe('SdlcDetailPage', () => {
     // Only the form-managed columns may travel; an explicit null/undefined for the
     // deprecated columns would make the server overwrite them instead of keeping them.
     expect(capturedBody!.name).toBe('需求分析');
+    expect(capturedBody!.code).toBe('STEP_1');
     expect(capturedBody!.timeoutSeconds).toBe(600);
     expect(capturedBody!.retryBudget).toBe(2);
     expect(JSON.parse(capturedBody!.gatePolicyJson as string)).toEqual(
@@ -328,6 +329,30 @@ describe('SdlcDetailPage', () => {
     for (const key of ['handlerRoleRef', 'statusOnEnterCode', 'onSuccess', 'onFail']) {
       expect(capturedBody!).not.toHaveProperty(key);
     }
+  });
+
+  it('shows the step code and saves an edited value', async () => {
+    let capturedBody: Record<string, unknown> | null = null;
+    server.use(
+      http.get('/api/sdlcs/1', () => HttpResponse.json({
+        success: true, data: { id: '1', name: '编码流程', status: 'DRAFT', steps: [{
+          id: '10', stepOrder: 1, name: '需求分析', kind: 'analysis', code: 'dev_analyze',
+          instructionMd: '理解需求', required: true,
+        }] },
+      })),
+      http.put('/api/sdlcs/1/steps/10', async ({ request }) => {
+        capturedBody = await request.json() as Record<string, unknown>;
+        return HttpResponse.json({ success: true, data: { id: '10' } });
+      }),
+    );
+    const { container } = renderPage();
+    expect(await screen.findByText('dev_analyze')).toBeInTheDocument();
+    fireEvent.click(container.querySelector('.ant-table-row .anticon-edit')!.closest('button')!);
+    const codeInput = await screen.findByLabelText('步骤编码');
+    expect(codeInput).toHaveValue('dev_analyze');
+    fireEvent.change(codeInput, { target: { value: 'dev_verify' } });
+    fireEvent.click(screen.getByRole('button', { name: /OK|确\s*定/ }));
+    await waitFor(() => expect(capturedBody?.code).toBe('dev_verify'));
   });
 
   it('keeps questions opt-in, removes the legacy question box, and explains where to configure them', async () => {

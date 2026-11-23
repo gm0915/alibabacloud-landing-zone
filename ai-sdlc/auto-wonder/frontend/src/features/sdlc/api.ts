@@ -33,6 +33,7 @@ export interface SdlcStep {
   required: boolean;
   timeoutSeconds: number | null;
   retryBudget: number | null;
+  code?: string | null;
 }
 
 export async function listSdlcTemplates(params: {
@@ -143,6 +144,7 @@ export interface CreateStepParams {
   required?: boolean;
   timeoutSeconds?: number | null;
   retryBudget?: number | null;
+  code?: string;
 }
 
 export async function addStep(sdlcId: SdlcId, data: CreateStepParams): Promise<SdlcStep> {

@@ -65,6 +65,7 @@
     "actions": "Actions",
     "version": "Version",
     "stepName": "Step name",
+    "stepCode": "Step code",
     "kind": "Kind",
     "stepKind": "Step kind",
     "required": "Required",
@@ -141,6 +142,7 @@
     "description": "Describe what this workflow is for",
     "workType": "Optionally bind a work item type",
     "stepName": "e.g. Code development",
+    "stepCode": "e.g. dev_verify",
     "kind": "Select a step kind",
     "instruction": "Describe the work, inputs and outputs, precautions, completion criteria, and how to call platform APIs for handoffs."
   },

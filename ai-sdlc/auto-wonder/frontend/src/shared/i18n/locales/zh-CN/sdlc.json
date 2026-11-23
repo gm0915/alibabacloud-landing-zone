@@ -65,6 +65,7 @@
     "actions": "操作",
     "version": "版本",
     "stepName": "步骤名称",
+    "stepCode": "步骤编码",
     "kind": "类型",
     "stepKind": "步骤类型",
     "required": "必需",
@@ -139,6 +140,7 @@
     "description": "描述该流程的用途",
     "workType": "可选绑定工单类型",
     "stepName": "如: 代码开发",
+    "stepCode": "如: dev_verify",
     "kind": "选择步骤类型",
     "instruction": "详细描述本步骤要做什么、输入输出、注意事项、完成标准，以及需要交接时如何调用平台接口。"
   },
