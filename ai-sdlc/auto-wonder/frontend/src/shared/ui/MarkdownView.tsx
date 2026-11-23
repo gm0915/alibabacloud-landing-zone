@@ -21,6 +21,8 @@ interface MarkdownViewProps {
   artifacts?: Artifact[];
   onArtifactClick?: (artifact: Artifact) => void;
   copyCodeBlocks?: boolean;
+  /** 评论正文常用单个换行分段；默认仍按 CommonMark 把单个换行收成空格。 */
+  breaks?: boolean;
 }
 
 export const markdownAllowedElements = [
@@ -113,6 +115,26 @@ function protectMermaidBlocks(content: string): { content: string; blocks: strin
   return { content: protectedContent, blocks };
 }
 
+const leadingLabel = /^([\p{L}\p{N}]{2,12})(：|:(?!\/\/))/gmu;
+
+function emphasizeLeadingLabels(source: string): string {
+  return source.split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/).map((chunk, index) => {
+    if (index % 2 === 1) return chunk;
+    return chunk.replace(leadingLabel, (match, label: string, colon: string, offset: number, text: string) => (
+      text.slice(Math.max(0, offset - 2), offset) === '**' ? match : `**${label}**${colon}`
+    ));
+  }).join('');
+}
+
+function keepSingleLineBreaks(source: string): string {
+  return source.split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/).map((chunk, index) => {
+    if (index % 2 === 1) return chunk;
+    return chunk.replace(/([^\r\n]*)\r?\n(?!\r?\n)/g, (_line, body: string) => (
+      body.endsWith('\\') || body.endsWith('  ') ? `${body}\n` : `${body}  \n`
+    ));
+  }).join('');
+}
+
 function restoreMermaidBlocks(content: string, blocks: string[]): string {
   if (blocks.length === 0) return content;
   return content.replace(mermaidBlockToken, (token, index: string) => blocks[Number(index)] ?? token);
@@ -126,15 +148,16 @@ function mermaidSource(children: unknown): string | null {
   return childrenText(props.children).replace(/\r?\n$/, '');
 }
 
-export const MarkdownView = memo(function MarkdownView({ content, className, mentionNames, artifacts, onArtifactClick, copyCodeBlocks = false }: MarkdownViewProps) {
+export const MarkdownView = memo(function MarkdownView({ content, className, mentionNames, artifacts, onArtifactClick, copyCodeBlocks = false, breaks = false }: MarkdownViewProps) {
   const { t } = useTranslation('shared');
   const plainText = (content?.length ?? 0) > 100_000;
   const renderedContent = useMemo(() => {
     if (plainText) return content;
-    const protectedContent = protectMermaidBlocks(content ?? '');
+    const source = breaks ? keepSingleLineBreaks(emphasizeLeadingLabels(content ?? '')) : (content ?? '');
+    const protectedContent = protectMermaidBlocks(source);
     const processed = highlightMentions(linkArtifacts(protectedContent.content, artifacts), mentionNames);
     return restoreMermaidBlocks(processed, protectedContent.blocks);
-  }, [content, artifacts, mentionNames, plainText]);
+  }, [content, artifacts, mentionNames, plainText, breaks]);
   const artifactsById = useMemo(
     () => new Map((artifacts ?? []).map((artifact) => [String(artifact.id), artifact])),
     [artifacts],

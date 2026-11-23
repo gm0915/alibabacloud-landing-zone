@@ -84,6 +84,7 @@ const CommentCard = memo(function CommentCard({
             mentionNames={mentionNames}
             artifacts={artifacts}
             onArtifactClick={onArtifactClick}
+            breaks
           />
         </div>
         {item.interactions?.filter(interaction => interaction.status !== 'APPLIED' || interaction.replyContent).map(interaction => (

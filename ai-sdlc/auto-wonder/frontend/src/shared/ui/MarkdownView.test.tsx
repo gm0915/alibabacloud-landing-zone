@@ -254,6 +254,26 @@ describe('MarkdownView', () => {
     expect(screen.queryByRole('button', { name: /打开产物/ })).not.toBeInTheDocument();
   });
 
+  it('keeps a single comment newline as a break without splitting a fenced block', () => {
+    const { container } = render(<MarkdownView breaks content={'评审完成：PASS\n交付范围：仓库\n\n```\nline1\nline2\n```'} />);
+    expect(container.querySelectorAll('p')).toHaveLength(1);
+    expect(container.querySelector('p')?.querySelector('br')).not.toBeNull();
+    expect(container.querySelector('pre')?.textContent).toBe('line1\nline2\n');
+    expect(Array.from(container.querySelectorAll('strong'), node => node.textContent)).toEqual(['评审完成', '交付范围']);
+  });
+
+  it('bolds a short label before a colon and leaves urls and prose alone', () => {
+    const { container } = render(<MarkdownView breaks content={'本轮实测：9 模块\n证据复用：沿用\n范围外：部署冒烟\n验证报告：http://192.168.4.177/report\nhttp://192.168.4.177/report\n交付接收与验证测试完成（首次验证）。'} />);
+    expect(Array.from(container.querySelectorAll('strong'), node => node.textContent)).toEqual(['本轮实测', '证据复用', '范围外', '验证报告']);
+    expect(screen.getAllByRole('link').every(link => link.getAttribute('href') === 'http://192.168.4.177/report')).toBe(true);
+  });
+
+  it('still joins a single newline when breaks is off', () => {
+    const { container } = render(<MarkdownView content={'评审完成：PASS\n交付范围：仓库'} />);
+    expect(container.querySelector('br')).toBeNull();
+    expect(container.querySelectorAll('p')).toHaveLength(1);
+  });
+
   it('forces normal white-space so an inherited pre-wrap parent cannot create blank line gaps', () => {
     const { container } = render(
       <div style={{ whiteSpace: 'pre-wrap' }}>

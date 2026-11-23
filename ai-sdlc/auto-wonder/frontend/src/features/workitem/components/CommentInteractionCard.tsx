@@ -128,7 +128,7 @@ export const CommentInteractionCard = memo(function CommentInteractionCard({ int
     {/* stopPending also covers a normal cancel while the executor is still running; only a
         terminal execution means the platform ended it without stop confirmation. */}
     {interaction.stopPending && executionTerminal && <div className="aw-comment-stop-warning" role="status">{t('interaction.stopPending')}</div>}
-    {interaction.replyContent && <div className="aw-comment-answer"><MarkdownView content={interaction.replyContent} artifacts={artifacts} onArtifactClick={onArtifactClick} /></div>}
+    {interaction.replyContent && <div className="aw-comment-answer"><MarkdownView content={interaction.replyContent} artifacts={artifacts} onArtifactClick={onArtifactClick} breaks /></div>}
     {failed && <div className="aw-comment-error">
       <p>{t('interaction.unconfirmed')}</p>
       <strong>{interaction.dispatchId ? t('interaction.underlyingErrorDispatch', { id: interaction.dispatchId }) : t('interaction.underlyingError')}</strong>
